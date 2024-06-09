@@ -1,0 +1,17 @@
+[
+    {
+        "name": "test1",
+        "actions":[
+            {
+                "time": 1000,
+                "action":"set",
+                "repeat": 1000
+            },
+            {
+                "time": 1000,
+                "action":"get",
+                "repeat": 123
+            }
+        ]
+    }
+]

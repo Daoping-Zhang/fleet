@@ -15,6 +15,23 @@ const (
 	GET
 )
 
+func (c Command) String() string {
+	return [...]string{"SET", "DEL", "GET"}[c]
+}
+
+func CommandFromString(s string) Command {
+	switch s {
+	case "SET":
+		return SET
+	case "DEL":
+		return DEL
+	case "GET":
+		return GET
+	default:
+		return -1
+	}
+}
+
 func serializeSET(key, value string) string {
 	// Split the value into words to handle each as a separate bulk string
 	valueParts := strings.Split(value, " ")

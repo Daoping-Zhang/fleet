@@ -40,6 +40,14 @@ func serve() {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+	mux.HandleFunc("/api/run-test", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			runTest(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 	http.ListenAndServe(":8080", mux)
 }
 
@@ -59,6 +67,9 @@ func getTests(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	// the names of Tests
 	var testNames []string
+	if len(Tests) == 0 { // not loaded from file
+		readTests()
+	}
 	for _, test := range Tests {
 		testNames = append(testNames, test.Name)
 	}
@@ -85,4 +96,18 @@ func setFleetLeader(w http.ResponseWriter, r *http.Request) {
 	fleetLeaderAddress = data.FleetLeaderAddress
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Fleet leader address updated successfully"))
+}
+
+// GET /api/run-test?testName=<testName>
+func runTest(w http.ResponseWriter, r *http.Request) {
+	testName := r.URL.Query().Get("testName")
+	if testName == "" {
+		http.Error(w, "Missing test name", http.StatusBadRequest)
+		return
+	}
+
+	executeTest(testName)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Test executed successfully"))
 }

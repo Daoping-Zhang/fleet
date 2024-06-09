@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"time"
 )
@@ -21,10 +24,13 @@ type TestResult struct {
 	Action  Command
 	Success bool
 	Latency time.Duration
-	Bytes   int
+	Bytes   int // Bytes sent during the operation, raw text instead of real message
 }
 
 var Tests []Test = []Test{}
+
+// The keys that have been written to the fleet
+var keys = map[string]bool{}
 
 // Goroutines for processing requests
 var currWorkers = 0
@@ -89,14 +95,53 @@ func testWorker(jobs <-chan Command, results chan<- TestResult) {
 		start := time.Now()
 		switch job {
 		case SET:
-			// Do something
+			key := GenerateRandomKey("test", 10)
+			value := GenerateRandomValue(10)
+			resp := SchedSendAndReceive(SET, key+" "+value)
+			// TODO: check success
+			if resp == "success" {
+				result.Success = true
+				keys[key] = true
+			}
+			result.Bytes = len(key) + len(value) + 1
 		case DEL:
-			// Do something
+			key := getRandExistingKey()
+			resp := SchedSendAndReceive(DEL, key)
+			if resp=="success" {
+				result.Success = true
+				keys[key] = false
+			}
 		case GET:
-			// Do something
-
+			key := getRandExistingKey()
+			resp := SchedSendAndReceive(GET, key)
+			if resp=="success" {
+				result.Success = true
+			}
 		}
 		result.Latency = time.Since(start)
 		results <- result
 	}
+}
+
+// GenerateRandomKey generates a random key with a given prefix and length.
+func GenerateRandomKey(prefix string, length int) string {
+	b := make([]byte, length)
+	rand.Read(b)
+	return fmt.Sprintf("%s-%s", prefix, hex.EncodeToString(b))
+}
+
+// GenerateRandomValue generates a random value with a specified length.
+func GenerateRandomValue(length int) string {
+	b := make([]byte, length)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func getRandExistingKey() string {
+	for k, v := range keys {
+		if v == true {
+			return k
+		}
+	}
+	return ""
 }

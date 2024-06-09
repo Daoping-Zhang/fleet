@@ -2,9 +2,11 @@
 #ifndef NODE_MANAGE_H
 #define NODE_MANAGE_H
 
+#include <iostream>
 #include <unordered_map>
 #include <vector>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 
 /**
  * @file NodeManage.h
@@ -107,13 +109,47 @@ public:
 
     // 反序列化 NodeManage 数据
     static NodeManage deserialize(const std::vector<char>& data);
-
-
-private:
-
     std::unordered_map<int, sockaddr_in> id_to_sockaddr;
     std::unordered_map<sockaddr_in, std::vector<int>, SockaddrInHash, SockaddrInEqual> sockaddr_to_ids;
     std::unordered_map<int, GroupInfo> groups;
+
+    void printAllMappings() const {
+        printIdToSockaddr();
+        printSockaddrToIds();
+        printGroups();
+    }
+private:
+    void printIdToSockaddr() const {
+        std::cout << "ID to sockaddr mappings:\n";
+        for (const auto& pair : id_to_sockaddr) {
+            std::cout << "ID " << pair.first << " -> IP: " << inet_ntoa(pair.second.sin_addr)
+                      << ", Port: " << ntohs(pair.second.sin_port) << std::endl;
+        }
+    }
+
+    void printSockaddrToIds() const {
+        std::cout << "Sockaddr to IDs mappings:\n";
+        for (const auto& pair : sockaddr_to_ids) {
+            std::cout << "IP: " << inet_ntoa(pair.first.sin_addr) << ", Port: " << ntohs(pair.first.sin_port) << " -> IDs: ";
+            for (int id : pair.second) {
+                std::cout << id << " ";
+            }
+            std::cout << std::endl;
+        }
+    }
+
+void printGroups() const {
+        std::cout << "Groups mapping:\n";
+        for (const auto& group : groups) {
+            std::cout << "Group ID " << group.first << " with Leader ID " << group.second.leaderId << " has members: ";
+            for (int id : group.second.memberIds) {
+                std::cout << id << " ";
+            }
+            std::cout << std::endl;
+        }
+    }
+
+    
 };
 
 #endif // NODE_MANAGE_H

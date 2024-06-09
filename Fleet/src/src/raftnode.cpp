@@ -98,11 +98,12 @@ Node::Node(string config_path){
         //cout<<node_info[i][0].c_str()<<" "<<node_info[i][1].c_str()<<endl;
         inet_pton(AF_INET, node_info[i][0].c_str(), &addr.sin_addr);
         addr.sin_port = htons(std::stoi(node_info[i][1]));
-        m_node_manage.addMapping(id, addr);
+        m_node_manage.addMapping(stoi(node_info[i][1]), addr);
     }
 
     m_ids = m_node_manage.getIdsBySockaddr(servaddr);
-
+    m_ids.push_back(id);
+    m_node_manage.printAllMappings();
     handle_for_sigpipe();// 设置SIGPIPE信号处理方式为忽略，这样当send_fd中的fd失效时，node send不会导致程序崩溃
 }
 
@@ -204,7 +205,24 @@ void Node::LeaderLoop() {
         {
             m_node_manage.createGroupsFromIds(m_node_manage.m_ids); //进行分组
 
+            std::cout << "m_ids contains: ";
+            for (int id : m_ids) {
+                std::cout << id << " ";
+            }
+            std::cout << std::endl;
+
+                m_node_manage.printAllMappings();
+
             generateGroupsMap(); //找到含有与本地绑定的ID对应的组
+             Debug::log("开始分组");
+
+                for (const auto& pair : m_groups) {
+                std::cout << "Group " << pair.first << ": ";
+                for (int num : pair.second) {
+                    std::cout << num << " ";
+                }
+                std::cout << std::endl;
+                }
 
             Message message;
             message.type = fleetControl;
@@ -313,8 +331,10 @@ void Node::work(int fd)
             if(m_init)
             {
                 m_init = false;
+                m_node_manage.createGroupsFromIds(m_node_manage.m_ids);
                 generateGroupsMap();
                 Debug::log("成功分组");
+                m_node_manage.printAllMappings();
 
                 for (const auto& pair : m_groups) {
                 std::cout << "Group " << pair.first << ": ";
@@ -773,10 +793,9 @@ void Node::sendmsg(int &fd,struct sockaddr_in addr,Message msg){
 void Node::generateGroupsMap()
 {
        
-        for (int id : m_ids) {
+       for (int id : m_ids) {
             std::vector<int> groupIndices = m_node_manage.getGroupIndicesWithMemberId(id);
             m_groups[id] = groupIndices;
         }
-   
    
 }

@@ -84,7 +84,7 @@ Node::Node(string config_path){
     for (int i = 1; i < num; ++i) {
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
-        //cout<<node_info[i][0].c_str()<<" "<<node_info[i][1].c_str()<<endl;
+        cout<<node_info[i][0].c_str()<<" "<<node_info[i][1].c_str()<<endl;
         inet_pton(AF_INET, node_info[i][0].c_str(), &addr.sin_addr);
         addr.sin_port = htons(std::stoi(node_info[i][1]));
         others_addr.push_back(addr);
@@ -115,9 +115,10 @@ void Node::Run() {
 //follower，周期检验
 void Node::FollowerLoop() {
     while (state==FOLLOWER) {
-        //cout<<"now:follower"<<endl;
+        cout<<"now:follower"<<endl;
         //倒计时
         delay1 = distribution1(generator1);
+        cout<<"delay1"<<delay1<<ednl;
         std::this_thread::sleep_for(std::chrono::milliseconds(delay1));
         //检验
         if(recv_heartbeat==false)//如果一个周期结束了还没有收到心跳，那么转换为竞选者
@@ -130,7 +131,7 @@ void Node::FollowerLoop() {
             cout<<id<<" become candidate"<<endl;
             cout<<"---------------"<<endl;
         }
-        else{//收到心跳了
+        else{//收到心跳了1start: follower
             recv_heartbeat=false;//重置心跳标志
         }
     }
@@ -253,6 +254,7 @@ void Node::work(int fd)
                 if(recv_info.vote_granted==true)//这里还没考虑term！
                 {
                     num_votes++;
+                    cout<<id<<" num_votes"<<num_votes<<endl;
                 }
                 if(num_votes>num/2){ 
                     cout<<id<<" become a leader"<<endl;
@@ -620,7 +622,7 @@ void Node::accept_connections() {
                     continue;
                 }
                 else{
-                    //cout<<"find a node!"<<endl;
+                    cout<<"find a node!"<<endl;
                 }
                 //recv_fd.push_back(accp_fd);
                 ev.data.fd = accp_fd;

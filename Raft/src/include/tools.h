@@ -24,10 +24,11 @@ int turn_id(int x,int y){
 
 
 //一个转换函数，根据自己id(x)和其他节点id(y)转换为自己在对应节点地send_fd里的index，只适用于port（id）是连号的情况
-int fd_id(int x,int y){
-    if(y<x)return y-1;
-    else  return y-2;
+int fd_id(int x, int y) {
+    if (y < 0) return 0; // 确保索引不会小于0
+    return y - 2;
 }
+
 
 //解析Redis协议格式的字符串
 std::vector<std::string> parse_string(const std::string& str) {

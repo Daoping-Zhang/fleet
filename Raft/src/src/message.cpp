@@ -67,23 +67,25 @@ void handle_for_sigpipe(){
         return;
 }
 
-
 int sendMessage(int sockfd, Message message) {
     handle_for_sigpipe(); // 设置SIGPIPE信号处理方式为忽略
     int ret = send(sockfd, &message, sizeof(message), 0);
     if (ret < 0) {
         if (errno == EPIPE || errno == ECONNRESET) {
             // 对方已经关闭了连接
+            std::cerr << "Connection closed by peer: " << strerror(errno) << std::endl;
             return -1;
-        }
-        else {
+        } else {
             // 发生了其他错误
             perror("send");
+            std::cerr << "Send error: " << strerror(errno) << std::endl;
             return -2;
         }
     }
+    std::cout << "sendMessage: Message sent successfully" << std::endl;
     return 1;
 }
+
 
 
 union Data {

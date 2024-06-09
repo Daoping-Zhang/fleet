@@ -1,10 +1,8 @@
-# Makefile
-
 CXX := g++
 CXXFLAGS := -std=c++11 -Wall -Wextra -Werror -pthread -I./include
 LDFLAGS := -pthread
 
-SRCS := ./src/kvstoresystem.cpp ./src/raftnode.cpp ./src/message.cpp ./src/confdeal.cpp ./src/threadpool.cpp
+SRCS := ./src/kvstoresystem.cpp ./src/raftnode.cpp ./src/message.cpp ./src/confdeal.cpp ./src/threadpool.cpp ./src/NodeManage.cpp ./src/Debug.cpp
 OBJS := $(SRCS:.cpp=.o)
 
 kvstoreraftsystem: $(OBJS)
@@ -13,7 +11,7 @@ kvstoreraftsystem: $(OBJS)
 ./src/kvstoresystem.o: ./src/kvstoresystem.cpp ./include/raftnode.h 
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-./src/raftnode.o: ./src/raftnode.cpp ./include/raftnode.h ./include/threadpool.h ./include/log.h ./include/kvstore.h
+./src/raftnode.o: ./src/raftnode.cpp ./include/raftnode.h ./include/threadpool.h ./include/log.h ./include/kvstore.h ./include/NodeManage.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 ./src/message.o: ./src/message.cpp ./include/message.h
@@ -25,6 +23,11 @@ kvstoreraftsystem: $(OBJS)
 ./src/threadpool.o: ./src/threadpool.cpp ./include/threadpool.h 
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+./src/NodeManage.o: ./src/NodeManage.cpp ./include/NodeManage.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+./src/Debug.o: ./src/Debug.cpp ./include/Debug.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 .PHONY: clean
 clean:

@@ -21,6 +21,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "NodeManage.h"
+
 using namespace std;
 
 /*在这个文件中，定义了统一的消息格式message
@@ -29,7 +31,9 @@ RequestVote,
 VoteResponse,
 AppendEntries,
 AppendResponse,
-ClientResponse
+ClientResponse,
+-----------------------新增消息Fleet-------------------------
+FleetControl
 
 单个message的收发函数：
 bool sendMessage(int sockfd, Message message) 
@@ -48,6 +52,7 @@ enum MessageType {
     appendresponse,
     clientresponse,
     clientrequest,
+    fleetControl,
     info
 };
 
@@ -140,6 +145,7 @@ AppendEntries getAppendEntries(const Message& message);
 
 // 从 Message 中还原 AppendResponse 结构体
 AppendResponse getAppendResponse(const Message& message) ;
+
 
 
 // 从 Message 中还原 ClientResponse 结构体

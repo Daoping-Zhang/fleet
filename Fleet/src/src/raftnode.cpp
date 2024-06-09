@@ -89,6 +89,20 @@ Node::Node(string config_path){
         addr.sin_port = htons(std::stoi(node_info[i][1]));
         others_addr.push_back(addr);
     }
+
+    for (int i = 0; i< num; i++)
+    {
+        id=stoi(node_info[0][1])%10;
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        //cout<<node_info[i][0].c_str()<<" "<<node_info[i][1].c_str()<<endl;
+        inet_pton(AF_INET, node_info[i][0].c_str(), &addr.sin_addr);
+        addr.sin_port = htons(std::stoi(node_info[i][1]));
+        m_node_manage.addMapping(id, addr);
+    }
+
+    m_ids = m_node_manage.getIdsBySockaddr(servaddr);
+
     handle_for_sigpipe();// 设置SIGPIPE信号处理方式为忽略，这样当send_fd中的fd失效时，node send不会导致程序崩溃
 }
 
@@ -99,12 +113,16 @@ Node::Node(string config_path){
 void Node::Run() {
     while (true) {
         if (state == FOLLOWER) {
+
             FollowerLoop();
         } 
         else if (state== CANDIDATE) {
+
             CandidateLoop();
         } 
         else if (state== LEADER) {
+            cout<<"inLeader"<<endl;
+
             LeaderLoop();
         }
     }
@@ -118,6 +136,8 @@ void Node::FollowerLoop() {
         //cout<<"now:follower"<<endl;
         //倒计时
         delay1 = distribution1(generator1);
+        //cout<<"delay1"<<delay1<<endl;
+
         std::this_thread::sleep_for(std::chrono::milliseconds(delay1));
         //检验
         if(recv_heartbeat==false)//如果一个周期结束了还没有收到心跳，那么转换为竞选者
@@ -144,6 +164,8 @@ void Node::CandidateLoop() {
     while (state==CANDIDATE) {
         //cout<<"now:candidate"<<endl;
         //发起投票
+        cout<<"inCandia"<<endl;
+
         num_votes=1;//首先投自己一票
         voted=true;//已经投票，不给别人投了
         for(int i=0;i<num-1;i++)//向其他节点发送投票请求
@@ -152,9 +174,13 @@ void Node::CandidateLoop() {
             //竞选者当前term，id（转换过的），日志最新条目索引，日志最新条目索引的term
             Message message=toMessage(requestvote,&need_vote,sizeof(need_vote));//转换为通用信息格式
 		    sendmsg(send_fd[i],others_addr[i],message);//发送给其他所有节点
+            cout<<"sendmsg:"<<i<<endl;
+
         }
         //倒计时
         delay2 = distribution2(generator2);
+        cout<<"delay2"<<delay1<<endl;
+
         std::this_thread::sleep_for(std::chrono::milliseconds(delay2));
         //检验
         if(state==CANDIDATE)//如果还没成为leader，那么变回follower
@@ -174,6 +200,40 @@ void Node::LeaderLoop() {
     while (state==LEADER) {
         //cout<<"now:leader"<<endl;
         //发送心跳信息
+        if(m_init)
+        {
+            m_node_manage.createGroupsFromIds(m_node_manage.m_ids); //进行分组
+
+            generateGroupsMap(); //找到含有与本地绑定的ID对应的组
+
+            Message message;
+            message.type = fleetControl;
+            std::vector<char> serializedData = m_node_manage.serialize(true);
+    
+            // 确保不超出 data 数组的大小
+            size_t dataSize = std::min(serializedData.size(), sizeof(message.data));
+
+            // 使用 memcpy 将数据从 vector 复制到数组
+            std::memcpy(message.data, serializedData.data(), dataSize);
+            
+            // 如果 serializedData 大小小于 message.data，可以考虑清零剩余部分
+            if (dataSize < sizeof(message.data)) {
+                std::memset(message.data + dataSize, 0, sizeof(message.data) - dataSize);
+            }
+
+            for(int i = 0; i<num-1;i++)
+            {
+                sendmsg(send_fd[i],others_addr[i],message);
+            }
+           
+           m_init = false;
+
+
+        }
+
+
+
+
         for(int i=0;i<num-1;i++)
         {
             AppendEntries heartbeat;
@@ -244,6 +304,30 @@ void Node::work(int fd)
                 }
             }
         }
+         else if(type==fleetControl)
+         {
+            
+            
+            std::vector<char> data(message_recv.data, message_recv.data+500);
+            m_node_manage = m_node_manage.deserialize(data);
+            if(m_init)
+            {
+                m_init = false;
+                generateGroupsMap();
+                Debug::log("成功分组");
+
+                for (const auto& pair : m_groups) {
+                std::cout << "Group " << pair.first << ": ";
+                for (int num : pair.second) {
+                    std::cout << num << " ";
+                }
+                std::cout << std::endl;
+    }
+
+            }
+            
+
+         }
         else if(type==voteresponse){//投票类型，follower->candidate
             if(state==CANDIDATE)
             {
@@ -253,6 +337,7 @@ void Node::work(int fd)
                 if(recv_info.vote_granted==true)//这里还没考虑term！
                 {
                     num_votes++;
+                    cout<<"num_votes"<<num_votes<<endl;
                 }
                 if(num_votes>num/2){ 
                     cout<<id<<" become a leader"<<endl;
@@ -318,7 +403,8 @@ void Node::work(int fd)
                     res.success=false;//同步失败
                 }     
                 Message msg=toMessage(appendresponse,&res,sizeof(res));
-                sendmsg(send_fd[fd_id(id,leader_id)],others_addr[fd_id(id,leader_id)],msg);
+                //cout<<"leader_id"<<leader_id<<endl;
+                sendmsg(send_fd[leader_id],others_addr[leader_id],msg);
             }
             else if(state==LEADER)//1,如果一个leader长时间未发送心跳给follower，那么其他节点会选出新的leader，这种情况下会收到心跳信息
             {
@@ -391,7 +477,7 @@ void Node::work(int fd)
                         goto leader_work1;//如果发现自己又变成leader了，执行leader的操作
                     }
                 }
-                sendmsg(send_fd[fd_id(id,leader_id)],others_addr[fd_id(id,leader_id)],message_recv);//知道leader id（有效的）了，可以再转发给新的leader
+                sendmsg(send_fd[leader_id],others_addr[leader_id],message_recv);//知道leader id（有效的）了，可以再转发给新的leader
                 //这里有一个巧妙的地方，新的leader会把消息返回给连接客户端的那个follwer，而不是第二或者更多次转发的follower，因为传递的message中的id号没变
             }
             else if(state==LEADER){
@@ -444,7 +530,7 @@ void Node::work(int fd)
                     //确认提交了该条目才继续
                 //}
                 Message res_msg=toMessage(clientresponse,&res,sizeof(res));
-                sendmsg(send_fd[fd_id(id,NodeId)],others_addr[fd_id(id,NodeId)],res_msg);
+                sendmsg(send_fd[NodeId],others_addr[NodeId],res_msg);
             }
         }
         else if(type==info){//客户端client的请求，client->leader（直接回应）|follower（中转）|candidate(fail)
@@ -469,7 +555,7 @@ void Node::work(int fd)
                 ask.node_id=id;//node id
                 std::strcpy(ask.message, s.c_str());
                 Message ask_msg=toMessage(clientrequest,&ask,sizeof(ask));
-                sendmsg(send_fd[fd_id(id,leader_id)],others_addr[fd_id(id,leader_id)],ask_msg);   
+                sendmsg(send_fd[leader_id],others_addr[leader_id],ask_msg);   
             }
             else if(state==LEADER){//client->leader
 
@@ -671,12 +757,26 @@ void Node::sendmsg(int &fd,struct sockaddr_in addr,Message msg){
             // 发送消息
             //cout<<"连接node成功"<<endl;
             ret = sendMessage(fd,msg);
-            if (ret <0) { // 发送消息失败
+            if (ret ==-1) { // 发送消息失败
                 // 处理发送消息失败的情况
-                cout << "send message failed" << endl;
+                cout << "close connect" << endl;
+            }
+            else
+            {
+                cout<<"no idea"<<endl;
             }
         }
     } 
 }
 
 
+void Node::generateGroupsMap()
+{
+       
+        for (int id : m_ids) {
+            std::vector<int> groupIndices = m_node_manage.getGroupIndicesWithMemberId(id);
+            m_groups[id] = groupIndices;
+        }
+   
+   
+}

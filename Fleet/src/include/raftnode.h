@@ -27,6 +27,9 @@
 #include"threadpool.h"
 #include "log.h"
 #include <atomic>
+#include "NodeManage.h"
+#include "Debug.h"
+
 #define MAXREQ 256
 #define MAX_EVENT 20
 #define THREAD_NUM 4
@@ -52,10 +55,15 @@ public:
             close(send_fd[i]);
         }
     }
+    std::vector<int> m_ids;
+    std::unordered_map<int, std::vector<int>> m_groups;
+
+
 private:
     void accept_connections();//管理连接，epoll机制
     void work(int fd);//接收信息
     void do_log();//处理日志
+    void generateGroupsMap();
     
 
     void FollowerLoop();//跟随者状态循环，包括等待一段时间并转换为候选者状态
@@ -63,6 +71,7 @@ private:
     //向其他节点发送 RequestVote 消息并等待投票结果，如果获得多数选票，则成为 Leader
     void LeaderLoop();//领导者状态循环，包括向其他节点发送 AppendEntries 消息并等待响应，如果收到多数节点的确认，则提交日志条目
     void sendmsg(int &fd,struct sockaddr_in addr,Message msg);//发送信息
+    bool m_init = true; //判断是否是刚开始
 
 private:
 
@@ -83,6 +92,8 @@ private:
     mutex mtx_append;
     kvstore kv;//该节点维护的数据库
     mutex send_mutex_;//发送锁，one by one，不能冲突
+
+    NodeManage m_node_manage;
     
 
     //leader专属：

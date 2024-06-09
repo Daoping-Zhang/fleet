@@ -10,7 +10,6 @@ using namespace std;
 void send_receive(int sock, string message) {
     // 将消息转换为字节数组并发送到服务器
     send(sock, message.c_str(), message.size(), 0);
-
     // 接收服务器的响应
     char buffer[1024] = {0};
     recv(sock, buffer, 1024, 0);
@@ -63,6 +62,9 @@ int main() {
             // 处理无效命令
             cout << "无效命令，请重新输入" << endl;
         }
+
+            sleep(1);
+
     }
 
     // 关闭套接字连接

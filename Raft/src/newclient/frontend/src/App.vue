@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { NH1, NH2, NIcon, NSelect, NButton } from 'naive-ui'
 
 interface Host {
@@ -74,6 +74,30 @@ const metrics = ref<Metrics>({
   otherData: ''
 });
 
+// Function to fetch nodes status from the API
+const fetchNodeStatus = async () => {
+  try {
+    const response = await fetch('/api/hosts');
+    if (response.ok) {
+      const data: Host[] = await response.json();
+      nodes.value = data;
+    } else {
+      console.error('Failed to fetch node status:', response.statusText);
+    }
+  } catch (error) {
+    console.error('Error fetching node status:', error);
+  }
+  console.log('Fetching node status', nodes.value);
+};
+
+// Set up interval to fetch node status every 2 seconds
+onMounted(() => {
+  fetchNodeStatus();
+  const intervalId = setInterval(fetchNodeStatus, 2000);
+  onUnmounted(() => {
+    clearInterval(intervalId);
+  });
+});
 </script>
 
 <template>
@@ -97,10 +121,10 @@ const metrics = ref<Metrics>({
       </div>
       <n-h2 prefix="bar">Run Test Cases</n-h2>
       <div class="mb-4">
-        <n-select v-model="selectedTestCase" :options="testCases" label="Select Test Case" placeholder="Select Test Case"
-          class="w-full sm:w-1/2 md:w-1/3 mb-4"></n-select>
-        <n-select v-model="selectedAlgorithm" :options="algorithms" label="Select Algorithm Mode" placeholder="Select Algorithm Mode"
-          class="w-full sm:w-1/2 md:w-1/3 mb-4"></n-select>
+        <n-select v-model="selectedTestCase" :options="testCases" label="Select Test Case"
+          placeholder="Select Test Case" class="w-full sm:w-1/2 md:w-1/3 mb-4"></n-select>
+        <n-select v-model="selectedAlgorithm" :options="algorithms" label="Select Algorithm Mode"
+          placeholder="Select Algorithm Mode" class="w-full sm:w-1/2 md:w-1/3 mb-4"></n-select>
         <n-button @click="runTestCase" type="primary">Run Test Case</n-button>
       </div>
       <div class="bg-gray-100 p-4 rounded shadow">

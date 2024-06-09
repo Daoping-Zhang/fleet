@@ -2,19 +2,47 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"strings"
 )
 
 type Host struct {
-	Address       net.Addr
+	Address       string
 	IsFleetLeader bool
 	IsRaftLeader  bool
 	GroupID       int
 	LogicalID     int
+	IsUp          bool
+}
+
+var groupNum int
+
+// Hosts, i.e. physical nodes
+var Hosts []Host = []Host{
+	{
+		Address:       "192.168.1.1:1234",
+		IsFleetLeader: true,
+		IsRaftLeader:  false,
+		GroupID:       1,
+		LogicalID:     1,
+		IsUp:          true,
+	},
+	{
+		Address:       "192.168.1.2:2432",
+		IsFleetLeader: false,
+		IsRaftLeader:  true,
+		GroupID:       1,
+		LogicalID:     2,
+		IsUp:          false,
+	},
 }
 
 func main() {
+	// oldClient()
+	serve()
+}
+
+// Logic from the original client
+func oldClient() {
 	println("请输入目标IP地址：")
 	ip := ""
 	fmt.Scanln(&ip)
@@ -22,12 +50,7 @@ func main() {
 	port := ""
 	fmt.Scanln(&port)
 	host := Host{}
-	var err error
-	host.Address, err = net.ResolveTCPAddr("tcp", ip+":"+port)
-	if err != nil {
-		println("解析地址失败")
-		return
-	}
+	host.Address = ip + ":" + port
 	println("请输入命令（set/del/get）：")
 	command := ""
 	fmt.Scanln(&command)

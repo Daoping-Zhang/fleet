@@ -66,7 +66,12 @@ func deserialize(response string) string {
 }
 
 func SendReceive(operation Command, content string, host Host) (response string) {
-	conn, err := net.Dial("tcp", host.Address.String())
+	addr, err := net.ResolveTCPAddr("tcp", host.Address)
+	if err != nil {
+		fmt.Println("Error resolving address:", err)
+		return
+	}
+	conn, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
 		fmt.Println("Error connecting to server:", err)
 		return

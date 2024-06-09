@@ -51,9 +51,8 @@ const testCases = ref([
 ]);
 
 const algorithms = ref([
-  { label: 'Algorithm Mode 1', value: 'AlgorithmMode1' },
-  { label: 'Algorithm Mode 2', value: 'AlgorithmMode2' },
-  // Add more algorithm modes as needed
+  { label: 'Fleet', value: 'Fleet' },
+  { label: 'Raft', value: 'Raft' },
 ]);
 
 // Define the selected values
@@ -90,6 +89,22 @@ const fetchNodeStatus = async () => {
   console.log('Fetching node status', nodes.value);
 };
 
+// Function to fetch test cases from the API
+const fetchTestCases = async () => {
+  try {
+    const response = await fetch('/api/tests');
+    if (response.ok) {
+      const data: string[] = await response.json();
+      testCases.value = data.map(test => ({ label: test, value: test }));
+    } else {
+      console.error('Failed to fetch test cases:', response.statusText);
+    }
+  } catch (error) {
+    console.error('Error fetching test cases:', error);
+  }
+  console.log('Fetching test cases', testCases.value);
+};
+
 // Set up interval to fetch node status every 2 seconds
 onMounted(() => {
   fetchNodeStatus();
@@ -121,8 +136,10 @@ onMounted(() => {
       </div>
       <n-h2 prefix="bar">Run Test Cases</n-h2>
       <div class="mb-4">
-        <n-select v-model="selectedTestCase" :options="testCases" label="Select Test Case"
-          placeholder="Select Test Case" class="w-full sm:w-1/2 md:w-1/3 mb-4"></n-select>
+        <div class="flex items-center space-x-4 sm:w-1/2 md:w-1/3 w-full my-2">
+          <n-select v-model:value="selectedTestCase" :options="testCases" placeholder="Select Test Case" />
+          <n-button @click="fetchTestCases">Refresh</n-button>
+        </div> 
         <n-select v-model="selectedAlgorithm" :options="algorithms" label="Select Algorithm Mode"
           placeholder="Select Algorithm Mode" class="w-full sm:w-1/2 md:w-1/3 mb-4"></n-select>
         <n-button @click="runTestCase" type="primary">Run Test Case</n-button>

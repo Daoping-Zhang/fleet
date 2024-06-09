@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"io/fs"
+	"log"
 	"net/http"
 )
 
@@ -15,16 +16,34 @@ func serve() {
 	fileserver := http.FileServer(http.FS(staticFiles))
 	mux := http.NewServeMux()
 	mux.Handle("/", fileserver)
-	mux.HandleFunc("/api/hosts", getHosts)
-	mux.HandleFunc("/api/tests", getTests)
+	mux.HandleFunc("/api/hosts", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getHosts(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/tests", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getTests(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/fleet-leader", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			setFleetLeader(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 	http.ListenAndServe(":8080", mux)
 }
 
-func getHosts(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+func getHosts(w http.ResponseWriter, _ *http.Request) {
 	// Return the list of hosts as a JSON array
 	w.Header().Set("Content-Type", "application/json")
 	json, err := json.Marshal(Hosts)
@@ -35,11 +54,7 @@ func getHosts(w http.ResponseWriter, r *http.Request) {
 	w.Write(json)
 }
 
-func getTests(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+func getTests(w http.ResponseWriter, _ *http.Request) {
 	// Return the list of tests as a JSON array
 	w.Header().Set("Content-Type", "application/json")
 	// the names of Tests
@@ -53,4 +68,21 @@ func getTests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write(json)
+}
+
+func setFleetLeader(w http.ResponseWriter, r *http.Request) {
+	var data struct {
+		FleetLeaderAddress string `json:"fleetLeaderAddress"`
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Println("Error decoding request body:", err)
+		return
+	}
+
+	fleetLeaderAddress = data.FleetLeaderAddress
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Fleet leader address updated successfully"))
 }

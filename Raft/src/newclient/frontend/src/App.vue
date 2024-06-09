@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { NH1, NH2, NIcon, NSelect, NButton } from 'naive-ui'
+import { NH1, NH2, NIcon, NSelect, NButton, NInput } from 'naive-ui'
 
 interface Host {
   Address: string;
@@ -58,6 +58,7 @@ const algorithms = ref([
 // Define the selected values
 const selectedTestCase = ref<string | null>(null);
 const selectedAlgorithm = ref<string | null>(null);
+const fleetLeaderAddress = ref<string | null>(null);
 
 // Define the method to run the test case
 const runTestCase = () => {
@@ -105,6 +106,28 @@ const fetchTestCases = async () => {
   console.log('Fetching test cases', testCases.value);
 };
 
+const setFleetLeaderAddress = async () => {
+  try {
+    const response = await fetch('/api/fleet-leader', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ fleetLeaderAddress: fleetLeaderAddress.value }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    console.log('Fleet leader address set successfully');
+  } catch (error) {
+    console.error('Error setting fleet leader address:', error);
+  }
+
+  console.log('Setting fleet leader address', fleetLeaderAddress);
+};
+
 // Set up interval to fetch node status every 2 seconds
 onMounted(() => {
   fetchNodeStatus();
@@ -121,6 +144,10 @@ onMounted(() => {
   <main>
     <div class="container mx-auto my-4">
       <n-h1>Fleet Consensus Algorithm</n-h1>
+      <div class="flex items-center space-x-4 sm:w-1/2 md:w-1/3 w-full my-2">
+        <n-input v-model:value="fleetLeaderAddress" placeholder="Fleet Leader Address" />
+        <n-button @click="setFleetLeaderAddress">Set</n-button>
+      </div>
       <n-h2 prefix="bar">Node Status</n-h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         <div v-for="node in nodes" :key="node.LogicalID" class="flex items-center p-2 border rounded shadow">
@@ -139,7 +166,7 @@ onMounted(() => {
         <div class="flex items-center space-x-4 sm:w-1/2 md:w-1/3 w-full my-2">
           <n-select v-model:value="selectedTestCase" :options="testCases" placeholder="Select Test Case" />
           <n-button @click="fetchTestCases">Refresh</n-button>
-        </div> 
+        </div>
         <n-select v-model="selectedAlgorithm" :options="algorithms" label="Select Algorithm Mode"
           placeholder="Select Algorithm Mode" class="w-full sm:w-1/2 md:w-1/3 mb-4"></n-select>
         <n-button @click="runTestCase" type="primary">Run Test Case</n-button>

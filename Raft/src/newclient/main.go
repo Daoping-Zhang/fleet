@@ -16,6 +16,8 @@ type Host struct {
 
 var groupNum int
 
+var fleetLeaderAddress string
+
 // Hosts, i.e. physical nodes
 var Hosts []Host = []Host{
 	{

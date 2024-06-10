@@ -62,11 +62,6 @@
         "thread": "cpp",
         "cinttypes": "cpp",
         "typeinfo": "cpp",
-        "__nullptr": "cpp",
-        "__locale": "cpp",
-        "locale": "cpp",
-        "queue": "cpp",
-        "stack": "cpp",
-        "__split_buffer": "cpp"
+        "__nullptr": "cpp"
     }
 }

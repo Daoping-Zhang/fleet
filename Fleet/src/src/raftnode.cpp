@@ -1,5 +1,6 @@
 #include "raftnode.h"
 #include <chrono>
+#include <nlohmann/json.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <sys/socket.h>
@@ -15,6 +16,8 @@
 #include <string>
 #include <sstream>
 #include"tools.h"
+using json = nlohmann::json;
+
 
 ThreadPool pool(THREAD_NUM);//线程池，用于work(回复收到的message)
 
@@ -57,7 +60,7 @@ Node::Node(string config_path){
     //初始化监听fd
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    inet_pton(AF_INET, node_info[0][0].c_str(), &servaddr.sin_addr);
     servaddr.sin_port = htons(std::stoi(node_info[0][1])); // 将第一个节点的端口号作为监听端口号
      /* Enable address reuse */
     int on = 1;
@@ -98,12 +101,15 @@ Node::Node(string config_path){
         //cout<<node_info[i][0].c_str()<<" "<<node_info[i][1].c_str()<<endl;
         inet_pton(AF_INET, node_info[i][0].c_str(), &addr.sin_addr);
         addr.sin_port = htons(std::stoi(node_info[i][1]));
-        m_node_manage.addMapping(stoi(node_info[i][1]), addr);
+        m_node_manage.addMapping(stoi(node_info[i][1])%10, addr);
+        m_active_id_table.setActive(stoi(node_info[i][1])%10, true);
     }
 
     m_ids = m_node_manage.getIdsBySockaddr(servaddr);
-    m_ids.push_back(id);
+    //m_ids.push_back(id);
     m_node_manage.printAllMappings();
+    m_init = true;
+
     handle_for_sigpipe();// 设置SIGPIPE信号处理方式为忽略，这样当send_fd中的fd失效时，node send不会导致程序崩溃
 }
 
@@ -204,25 +210,11 @@ void Node::LeaderLoop() {
         if(m_init)
         {
             m_node_manage.createGroupsFromIds(m_node_manage.m_ids); //进行分组
-
-            std::cout << "m_ids contains: ";
-            for (int id : m_ids) {
-                std::cout << id << " ";
-            }
-            std::cout << std::endl;
-
-                m_node_manage.printAllMappings();
-
-            generateGroupsMap(); //找到含有与本地绑定的ID对应的组
+            m_node_manage.printAllMappings();
+            generateGroupsMap(); //找到含有与本地绑定的ID对应的组得到m_group_ids可以通过m_group_ids配合m_node_manage中的group信息找到组
              Debug::log("开始分组");
 
-                for (const auto& pair : m_groups) {
-                std::cout << "Group " << pair.first << ": ";
-                for (int num : pair.second) {
-                    std::cout << num << " ";
-                }
-                std::cout << std::endl;
-                }
+          
 
             Message message;
             message.type = fleetControl;
@@ -243,13 +235,58 @@ void Node::LeaderLoop() {
             {
                 sendmsg(send_fd[i],others_addr[i],message);
             }
+            
            
            m_init = false;
 
 
         }
 
+          else
+        {
+        m_active_id_table.printActiveStates();
 
+        if(!m_active_id_table.getAllInactiveIDs().empty())
+        {
+            rebindInactiveIds(m_node_manage,m_active_id_table);
+           
+            m_ids = m_node_manage.getIdsBySockaddr(servaddr);
+
+            Message message;
+            message.type = fleetControl;
+            std::vector<char> serializedData = m_node_manage.serialize(true);
+    
+            // 确保不超出 data 数组的大小
+            size_t dataSize = std::min(serializedData.size(), sizeof(message.data));
+
+            // 使用 memcpy 将数据从 vector 复制到数组
+            std::memcpy(message.data, serializedData.data(), dataSize);
+            
+            // 如果 serializedData 大小小于 message.data，可以考虑清零剩余部分
+            if (dataSize < sizeof(message.data)) {
+                std::memset(message.data + dataSize, 0, sizeof(message.data) - dataSize);
+            }
+
+            for(int i = 0; i<num-1;i++)
+            {
+                sendmsg(send_fd[i],others_addr[i],message);
+            }
+
+           
+        }
+
+        }
+
+      
+       
+        
+
+        m_active_id_table.setAllInactive();
+
+        for (int id : m_ids)
+        {
+            m_active_id_table.setActive(id,true);
+        }
 
 
         for(int i=0;i<num-1;i++)
@@ -274,6 +311,8 @@ void Node::LeaderLoop() {
                 }
             }
             Message message=toMessage(appendentries,&heartbeat,sizeof(heartbeat));
+                          
+
 		    sendmsg(send_fd[i],others_addr[i],message);
         }
         //倒计时
@@ -327,6 +366,7 @@ void Node::work(int fd)
             
             
             std::vector<char> data(message_recv.data, message_recv.data+500);
+            
             m_node_manage = m_node_manage.deserialize(data);
             if(m_init)
             {
@@ -334,18 +374,11 @@ void Node::work(int fd)
                 m_node_manage.createGroupsFromIds(m_node_manage.m_ids);
                 generateGroupsMap();
                 Debug::log("成功分组");
-                m_node_manage.printAllMappings();
-
-                for (const auto& pair : m_groups) {
-                std::cout << "Group " << pair.first << ": ";
-                for (int num : pair.second) {
-                    std::cout << num << " ";
-                }
-                std::cout << std::endl;
-    }
-
             }
             
+            m_ids = m_node_manage.getIdsBySockaddr(servaddr);
+            m_node_manage.printAllMappings();
+          
 
          }
         else if(type==voteresponse){//投票类型，follower->candidate
@@ -376,7 +409,7 @@ void Node::work(int fd)
             if(state==FOLLOWER)
             {
                 AppendResponse res;
-                res.follower_id=id;//告诉leader自己的id
+                res.follow_ids= m_ids;//告诉leader自己的id
                 recv_heartbeat=true;//设置心跳标志
                 if(recv_info.term>current_term)current_term=recv_info.term;//如果比leader的term小，那么更新为leader的term
                 res.term=current_term;//返回自己的term（可能比leader的大）
@@ -422,9 +455,25 @@ void Node::work(int fd)
                     }  
                     res.success=false;//同步失败
                 }     
-                Message msg=toMessage(appendresponse,&res,sizeof(res));
+                Message message;
+                message.type = appendresponse;
+
+                std::vector<char> serializedData = res.serialize();
+    
+                // 确保不超出 data 数组的大小
+                size_t dataSize = std::min(serializedData.size(), sizeof(message.data));
+
+                // 使用 memcpy 将数据从 vector 复制到数组
+                std::memcpy(message.data, serializedData.data(), dataSize);
+                
+                // 如果 serializedData 大小小于 message.data，可以考虑清零剩余部分
+                if (dataSize < sizeof(message.data)) {
+                    std::memset(message.data + dataSize, 0, sizeof(message.data) - dataSize);
+                }
+
+
                 //cout<<"leader_id"<<leader_id<<endl;
-                sendmsg(send_fd[leader_id],others_addr[leader_id],msg);
+                sendmsg(send_fd[leader_id],m_node_manage.getSockaddrById(leader_id),message);
             }
             else if(state==LEADER)//1,如果一个leader长时间未发送心跳给follower，那么其他节点会选出新的leader，这种情况下会收到心跳信息
             {
@@ -443,13 +492,15 @@ void Node::work(int fd)
             if(state==LEADER)
             {
                 AppendResponse recv_info;
-                recv_info=getAppendResponse(message_recv);
+                recv_info=recv_info.deserialize(message_recv.data,1);
+
+                int follower_id = recv_info.follow_ids[0];
                 if(recv_info.term>current_term)current_term=recv_info.term;//如果follower的term比leader大。那么更新为大的term
                 if(recv_info.success==true)
                 {
-                    for(int i=match_index[fd_id(id,recv_info.follower_id)]+1;i<=recv_info.log_index;i++)//刚刚成功复制给follower的条目
+                    for(int i=match_index[fd_id(id,follower_id)]+1;i<=recv_info.log_index;i++)//刚刚成功复制给follower的条目
                     {
-                        log.add_num(i-1,recv_info.follower_id);
+                        log.add_num(i-1,follower_id);
                         //cout<<"条目"<<i<<"获得了"<<recv_info.follower_id<<"的响应"<<endl;
                     }  
                 }    
@@ -465,13 +516,18 @@ void Node::work(int fd)
                 mtx_match.lock();
                 if(recv_info.log_index!=-1)//代表follwer把多余的删了，此时match不用变，等待回滚匹配，以免造成死循环 0  3 2 1|回滚| 3 0 3 2 1|回滚|  3 0 ...
                 {  
-                    match_index[fd_id(id,recv_info.follower_id)]=recv_info.log_index;//匹配follower最新更新到的条目索引
-                    if(match_index[fd_id(id,recv_info.follower_id)]!=0)//如果follower返回的index不为0，则更新相应node的match index为返回值
-                        match_term[fd_id(id,recv_info.follower_id)]=log.term_at(match_index[fd_id(id,recv_info.follower_id)]);//match index相应的term
+                    match_index[fd_id(id,follower_id)]=recv_info.log_index;//匹配follower最新更新到的条目索引
+                    if(match_index[fd_id(id,follower_id)]!=0)//如果follower返回的index不为0，则更新相应node的match index为返回值
+                        match_term[fd_id(id,follower_id)]=log.term_at(match_index[fd_id(id,follower_id)]);//match index相应的term
                     else{
-                        match_term[fd_id(id,recv_info.follower_id)]=0;//index为0，说明follower中没有匹配的或者为空，此时baterm设置为0来匹配follower
+                        match_term[fd_id(id,follower_id)]=0;//index为0，说明follower中没有匹配的或者为空，此时baterm设置为0来匹配follower
                     }     
                 }
+                for (int id : recv_info.follow_ids)
+                {
+                    m_active_id_table.setActive(id,true);
+                }
+                
                 mtx_match.unlock();
                 live=5;//翻转leader沙漏
             }
@@ -554,32 +610,14 @@ void Node::work(int fd)
             }
         }
         else if(type==info){//客户端client的请求，client->leader（直接回应）|follower（中转）|candidate(fail)
-            string s=getString(message_recv);
-            cout<<id<<"收到"<<s<<endl;
-            while(state==CANDIDATE){//竞争者状态阻塞，不处理
+            string s = getString(message_recv);
+            json receiveJson = json::parse(s);
+            
+            
+            
+            if(state==LEADER){//client->leader
 
-            }
-            if(state==FOLLOWER)//client->follower
-            {
-                delay3 = distribution3(generator3);
-                std::this_thread::sleep_for(std::chrono::milliseconds(delay3));//等一个心跳发送周期，确认leader有效，如果收到心跳，那么leader_id会是有效的，如果没收到，leader会被置为0（无效），然后被阻塞
-                while(leader_id==0){//还不知道leader的id，不能乱发，否则会越过数组范围
-                    if(state==LEADER){//如果变为leader了，处理该info
-                        goto leader_work2;
-                    }
-                }
-                //构造中转信息给leader
-                ClientRequest ask;
-                memset(ask.message,0,sizeof(ask.message));
-                ask.client_fd=fd;//告知fd，因为自己不保存
-                ask.node_id=id;//node id
-                std::strcpy(ask.message, s.c_str());
-                Message ask_msg=toMessage(clientrequest,&ask,sizeof(ask));
-                sendmsg(send_fd[leader_id],others_addr[leader_id],ask_msg);   
-            }
-            else if(state==LEADER){//client->leader
-
-            leader_work2:
+            
                 cout<<"get a client ask(leader)"<<endl;
                 while(log.committed_index()<log.latest_index()){
                 
@@ -799,3 +837,41 @@ void Node::generateGroupsMap()
         }
    
 }
+
+void Node::rebindInactiveIds(NodeManage& nodeManage, ActiveIDTable& activeTable) {
+    std::vector<int> inactiveIds = activeTable.getAllInactiveIDs(); // 获取所有不活跃的 ID
+    std::vector<int> activeIds = activeTable.getAllActiveIDs(); // 获取所有活跃的 ID
+
+    // 存储每个地址绑定的活跃 ID 数量
+    std::unordered_map<sockaddr_in, int, SockaddrInHash, SockaddrInEqual> addrUsage;
+
+    // 记录每个活跃 ID 对应的地址
+    for (int id : activeIds) {
+        sockaddr_in addr = nodeManage.getSockaddrById(id);
+        addrUsage[addr]++;
+    }
+
+    // 找出绑定数量最少的地址
+    int minUsage = std::numeric_limits<int>::max(); // 只声明和初始化一次
+    sockaddr_in leastUsedAddr;
+    for (const auto& pair : addrUsage) {
+        if (pair.second < minUsage) {
+            minUsage = pair.second;
+            leastUsedAddr = pair.first;
+        }
+    }
+
+    // 检查是否找到有效的最少使用地址
+    if (minUsage == std::numeric_limits<int>::max()) {
+        std::cerr << "No active IDs found. Unable to rebind inactive IDs." << std::endl;
+        return; // 早期返回，防止进一步的错误操作
+    }
+
+    // 将所有不活跃的 ID 重新绑定到最少使用的地址
+    for (int inactiveId : inactiveIds) {
+        nodeManage.addMapping(inactiveId, leastUsedAddr); // 重新绑定地址
+        std::cout << "Rebound inactive ID " << inactiveId << " to least used active address "
+                  << inet_ntoa(leastUsedAddr.sin_addr) << ":" << ntohs(leastUsedAddr.sin_port) << std::endl;
+    }
+}
+

@@ -100,14 +100,6 @@ struct AppendEntries {
 如果跟随者的 commit_index 比 leader_commit 大，则跟随者可以直接提交对应的日志条目。
 这个机制可以确保所有的节点最终都会提交相同的日志序列，从而保证系统的一致性。*/
 
-struct AppendResponse {
-    int follower_id;
-    int log_index;
-    int follower_commit;
-    int term;
-    bool success;
-    bool identify;
-};//表示日志追加响应的消息类型，包括当前任期和是否成功追加
 
 
 struct ClientResponse{
@@ -143,8 +135,8 @@ VoteResponse getVoteResponse(const Message& message);
 // 从 Message 中还原 AppendEntries 结构体
 AppendEntries getAppendEntries(const Message& message);
 
-// 从 Message 中还原 AppendResponse 结构体
-AppendResponse getAppendResponse(const Message& message) ;
+
+
 
 
 

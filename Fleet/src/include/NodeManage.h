@@ -7,6 +7,7 @@
 #include <vector>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <limits>  // 添加这一行以包含 <limits> 头文件
 
 /**
  * @file NodeManage.h
@@ -118,6 +119,37 @@ public:
         printSockaddrToIds();
         printGroups();
     }
+
+    sockaddr_in findLeastUsedAddressForIds(const std::vector<int>& ids) {
+    std::unordered_map<sockaddr_in, int, SockaddrInHash, SockaddrInEqual> addrCount;
+
+    // 遍历输入的 ID，记录每个地址的使用频率
+    for (int id : ids) {
+        sockaddr_in addr = getSockaddrById(id);
+        addrCount[addr]++;
+    }
+
+    // 找到绑定 ID 数最少的地址
+    sockaddr_in leastUsedAddr;
+    int minUsage = std::numeric_limits<int>::max(); // 初始化为最大整数值，用于比较
+
+    for (const auto& pair : addrCount) {
+        if (pair.second < minUsage) {
+            minUsage = pair.second;
+            leastUsedAddr = pair.first;
+        }
+    }
+
+    // 检查是否找到有效地址
+    if (minUsage == std::numeric_limits<int>::max()) {
+        std::cerr << "No valid addresses found for given IDs." << std::endl;
+        // 可以选择返回一个特定的错误值或异常
+        leastUsedAddr.sin_addr.s_addr = INADDR_NONE; // 设置为无效地址
+    }
+
+    return leastUsedAddr;
+}
+
 private:
     void printIdToSockaddr() const {
         std::cout << "ID to sockaddr mappings:\n";

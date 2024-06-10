@@ -29,6 +29,8 @@
 #include <atomic>
 #include "NodeManage.h"
 #include "Debug.h"
+#include "ActiveIDTable.h"
+#include "AppendResponse.h"
 
 #define MAXREQ 256
 #define MAX_EVENT 20
@@ -57,12 +59,14 @@ public:
     }
     std::vector<int> m_ids;
     std::unordered_map<int, std::vector<int>> m_groups;
+    ActiveIDTable m_active_id_table;
 
 
 private:
     void accept_connections();//管理连接，epoll机制
     void work(int fd);//接收信息
     void do_log();//处理日志
+    void rebindInactiveIds(NodeManage& nodeManage, ActiveIDTable& activeTable);
     void generateGroupsMap();
     
 

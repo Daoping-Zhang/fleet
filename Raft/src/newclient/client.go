@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -124,4 +126,68 @@ func SendReceive(operation Command, content string, host Host) (response string)
 
 	response = deserialize(resp)
 	return
+}
+
+func DecodeResp(rawResp string) (bool, string) {
+	reader := bufio.NewReader(bytes.NewReader([]byte(rawResp)))
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return false, fmt.Sprintf("Error reading response: %v", err)
+	}
+	line = strings.TrimSuffix(line, "\r\n")
+
+	switch line[0] {
+	case '+': // Simple Strings
+		return true, line[1:]
+	case '-': // Errors
+		return false, line[1:]
+	case ':': // Integers
+		return true, line[1:]
+	case '$': // Bulk Strings
+		length, err := strconv.Atoi(line[1:])
+		if err != nil {
+			return false, fmt.Sprintf("Error parsing bulk string length: %v", err)
+		}
+		if length == -1 {
+			return false, "Null Bulk String"
+		}
+		buf := make([]byte, length+2)
+		_, err = reader.Read(buf)
+		if err != nil {
+			return false, fmt.Sprintf("Error reading bulk string: %v", err)
+		}
+		return true, string(buf[:length])
+	case '*': // Arrays
+		length, err := strconv.Atoi(line[1:])
+		if err != nil {
+			return false, fmt.Sprintf("Error parsing array length: %v", err)
+		}
+		var array []string
+		for i := 0; i < length; i++ {
+			partType, err := reader.ReadString('\n')
+			if err != nil {
+				return false, fmt.Sprintf("Error reading array element: %v", err)
+			}
+			partType = strings.TrimSuffix(partType, "\r\n")
+
+			if partType[0] != '$' {
+				return false, fmt.Sprintf("Unexpected array element type: %c", partType[0])
+			}
+
+			partLength, err := strconv.Atoi(partType[1:])
+			if err != nil {
+				return false, fmt.Sprintf("Error parsing bulk string length in array: %v", err)
+			}
+
+			buf := make([]byte, partLength+2)
+			_, err = reader.Read(buf)
+			if err != nil {
+				return false, fmt.Sprintf("Error reading bulk string in array: %v", err)
+			}
+			array = append(array, string(buf[:partLength]))
+		}
+		return true, strings.Join(array, " ")
+	default:
+		return false, fmt.Sprintf("Unknown message type: %c", line[0])
+	}
 }

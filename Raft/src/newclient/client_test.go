@@ -22,3 +22,43 @@ func TestSerializeGet(t *testing.T) {
 		t.Errorf("Expected *2\r\n$3\r\nGET\r\n$7\r\nCS06142\r\n, got %s", result)
 	}
 }
+
+func TestDeserializeGetReply(t *testing.T) {
+	status, value := DecodeResp("*2\r\n$5\r\nCloud\r\n$9\r\nComputing\r\n")
+	if status != true {
+		t.Errorf("Expected true, got %v", status)
+	}
+	if value != "Cloud Computing" {
+		t.Errorf("Expected Cloud Computing, got %v", value)
+	}
+}
+
+func TestDeserializeSetReply(t *testing.T) {
+	status, value := DecodeResp("+OK\r\n")
+	if status != true {
+		t.Errorf("Expected true, got %v", status)
+	}
+	if value != "OK" {
+		t.Errorf("Expected OK, got %v", value)
+	}
+}
+
+func TestDeserializeDelReply(t *testing.T) {
+	status, value := DecodeResp(":2\r\n")
+	if status != true {
+		t.Errorf("Expected true, got %v", status)
+	}
+	if value != "2" {
+		t.Errorf("Expected 2, got %v", value)
+	}
+}
+
+func TestDeserializeErrorReply(t *testing.T) {
+	status, value := DecodeResp("-ERROR\r\n")
+	if status != false {
+		t.Errorf("Expected false, got %v", status)
+	}
+	if value != "ERROR" {
+		t.Errorf("Expected ERROR, got %v", value)
+	}
+}

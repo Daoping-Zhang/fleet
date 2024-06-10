@@ -66,24 +66,6 @@ func serializeGET(key string) string {
 	return fmt.Sprintf("*2\r\n$3\r\nGET\r\n$%d\r\n%s\r\n", len(key), key)
 }
 
-func deserialize(response string) string {
-	// Simplified deserialization assuming the response is a simple string.
-	if strings.HasPrefix(response, "+") {
-		return strings.TrimPrefix(response, "+")
-	}
-	if strings.HasPrefix(response, "-") {
-		return strings.TrimPrefix(response, "-")
-	}
-	if strings.HasPrefix(response, ":") {
-		return strings.TrimPrefix(response, ":")
-	}
-	if strings.HasPrefix(response, "$") {
-		parts := strings.SplitN(response, "\r\n", 3)
-		return parts[2]
-	}
-	return response
-}
-
 func SendReceive(operation Command, content string, host Host) (response string) {
 	addr, err := net.ResolveTCPAddr("tcp", host.Address)
 	if err != nil {
@@ -118,13 +100,12 @@ func SendReceive(operation Command, content string, host Host) (response string)
 	}
 
 	respReader := bufio.NewReader(conn)
-	resp, err := respReader.ReadString('\n')
+	response, err = respReader.ReadString('\n')
 	if err != nil {
 		fmt.Println("Error reading response:", err)
 		return
 	}
 
-	response = deserialize(resp)
 	return
 }
 

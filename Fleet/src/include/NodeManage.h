@@ -33,6 +33,8 @@ struct SockaddrInEqual {
     }
 };
 
+
+
 // 定义存储组信息的结构体
 struct GroupInfo {
     int leaderId;  // 组长ID
@@ -40,6 +42,10 @@ struct GroupInfo {
 };
 
 
+// 重载 == 运算符
+inline bool operator==(const sockaddr_in& a, const sockaddr_in& b) {
+    return a.sin_port == b.sin_port && a.sin_addr.s_addr == b.sin_addr.s_addr;
+}
 
 
 class NodeManage {
@@ -102,6 +108,13 @@ public:
     std::vector<int> getGroupIndicesWithMemberId(int memberId);
 
     void createGroupsFromIds(const std::vector<int>& m_ids);
+    
+    sockaddr_in findAddressWithFirstId(int id) const;
+    
+    void recovery(const std::vector<int>& recovery_ids);
+    
+    void unbinding(int id, const sockaddr_in& addr);
+
 
     std::vector<int> m_ids;
 
@@ -113,6 +126,7 @@ public:
     std::unordered_map<int, sockaddr_in> id_to_sockaddr;
     std::unordered_map<sockaddr_in, std::vector<int>, SockaddrInHash, SockaddrInEqual> sockaddr_to_ids;
     std::unordered_map<int, GroupInfo> groups;
+    int commit_num; //记录改动次数
 
     void printAllMappings() const {
         printIdToSockaddr();

@@ -60,6 +60,9 @@ public:
     std::vector<int> m_ids;
     std::unordered_map<int, std::vector<int>> m_groups;
     ActiveIDTable m_active_id_table;
+    int m_leader_commit;
+    std::vector<int> m_recovery_ids;
+    bool m_recovery = false;
 
 
 private:

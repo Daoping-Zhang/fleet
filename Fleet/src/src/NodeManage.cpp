@@ -6,9 +6,18 @@
 
 
 void NodeManage::addMapping(int id, const sockaddr_in& sockaddr) {
-    m_ids.push_back(id);
+    // 检查 m_ids 中是否已经存在该 ID
+    if (std::find(m_ids.begin(), m_ids.end(), id) == m_ids.end()) {
+        m_ids.push_back(id);
+    }
+
+    // 检查 sockaddr_to_ids 中的该地址是否已经存在该 ID
+    if (std::find(sockaddr_to_ids[sockaddr].begin(), sockaddr_to_ids[sockaddr].end(), id) == sockaddr_to_ids[sockaddr].end()) {
+        sockaddr_to_ids[sockaddr].push_back(id);
+    }
+    
     id_to_sockaddr[id] = sockaddr;
-    sockaddr_to_ids[sockaddr].push_back(id);
+   
 }
 
 sockaddr_in NodeManage::getSockaddrById(int id) {
@@ -49,7 +58,8 @@ std::vector<int> NodeManage::getGroupIndicesWithMemberId(int memberId) {
 
 std::vector<char> NodeManage::serialize(bool includeGroups) const {
         std::vector<char> data;
-
+        // Serialize commit_num
+        data.insert(data.end(), reinterpret_cast<const char*>(&commit_num), reinterpret_cast<const char*>(&commit_num + 1));
         // Serialize id_to_sockaddr
         size_t map_size = id_to_sockaddr.size();
         data.insert(data.end(), reinterpret_cast<const char*>(&map_size), reinterpret_cast<const char*>(&map_size + 1));
@@ -103,7 +113,9 @@ std::vector<char> NodeManage::serialize(bool includeGroups) const {
 NodeManage NodeManage::deserialize(const std::vector<char>& data) {
     NodeManage nodeManage;
         size_t i = 0;
-
+        // 反序列化 commit_num
+        std::memcpy(&nodeManage.commit_num, &data[i], sizeof(nodeManage.commit_num));
+        i += sizeof(nodeManage.commit_num);
         // Deserialize id_to_sockaddr
         size_t map_size;
         if (data.size() >= i + sizeof(size_t)) {
@@ -218,3 +230,61 @@ void NodeManage::createGroupsFromIds(const std::vector<int>& m_ids) {
     }
 }
 
+sockaddr_in NodeManage::findAddressWithFirstId(int id) const {
+    for (const auto& pair : sockaddr_to_ids) {
+        if (!pair.second.empty() && pair.second.front() == id) {
+            return pair.first;
+        }
+    }
+
+    // 如果未找到，返回一个无效的 sockaddr_in 结构体
+    sockaddr_in invalid_addr;
+    invalid_addr.sin_family = AF_UNSPEC;
+    return invalid_addr;
+}
+
+void NodeManage::recovery(const std::vector<int>& recovery_ids) {
+    for (int id : recovery_ids) {
+        // 检查是否存在与该 ID 绑定的地址
+        unbinding(id,getSockaddrById(id));
+
+        // 查找第一个 ID 为该 ID 的地址
+        sockaddr_in new_addr = findAddressWithFirstId(id);
+
+        // 检查找到的地址是否有效
+        if (new_addr.sin_family != AF_UNSPEC) {
+            // 重新绑定到找到的地址
+            addMapping(id, new_addr);
+        } else {
+            std::cerr << "No valid address found for ID " << id << std::endl;
+        }
+    }
+}
+
+void NodeManage::unbinding(int id, const sockaddr_in& addr) {
+    auto it = id_to_sockaddr.find(id);
+    if (it != id_to_sockaddr.end() && it->second == addr) {
+        // 输出已经解绑的信息
+        std::cout << "ID " << id << " is already bound to the given address. Unbinding now." << std::endl;
+
+        // 解除 ID 和地址的绑定
+        id_to_sockaddr.erase(it);
+
+        auto& ids = sockaddr_to_ids[addr];
+        if (!ids.empty() && ids.front() == id) {
+            // 如果地址中绑定的 ID 列表的第一个元素是该 ID，则不作处理
+            return;
+        } else {
+            // 否则，从该地址的 ID 列表中删除该 ID
+            ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
+
+            // 如果该地址不再绑定任何 ID，删除该地址
+            if (ids.empty()) {
+                sockaddr_to_ids.erase(addr);
+            }
+        }
+    } else {
+        // 给定的 ID 没有与给定的地址绑定
+        std::cout << "ID " << id << " is not bound to the given address. No action taken." << std::endl;
+    }
+}

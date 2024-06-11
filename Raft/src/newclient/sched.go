@@ -42,4 +42,3 @@ func SchedSendReceive(operation Command, content string) (success bool, msg stri
 	}
 	return JsonSendReceive(req, host)
 }
-

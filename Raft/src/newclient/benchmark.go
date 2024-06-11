@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"time"
 )
@@ -103,6 +104,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 	for job := range jobs {
 		result := TestActionResult{Action: job}
 		start := time.Now()
+	JOBSWITCH:
 		switch job {
 		case SET:
 			key := GenerateRandomKey("test", 10)
@@ -119,10 +121,34 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 			if ok {
 				result.Success = true
 				keys[key] = false
+				result.Bytes = len(key)
 			}
 		case GET:
 			key := getRandExistingKey()
-			ok, _ := SchedSendReceive(GET, key)
+			ok, resp := SchedSendReceive(GET, key)
+			if ok {
+				result.Success = true
+				result.Bytes = len(resp)
+			}
+		case POWEROFF: // POWEROFF and POWERON doesn't follow traditional per-group scheduling
+			node := getFirstAliveNode() // TODO: Use random alive node?
+			if node == nil {
+				log.Println("No alive node found")
+				break JOBSWITCH
+			}
+			req := ClientRequest{Key: "node_active", Method: DEL.String()}
+			ok, _ := JsonSendReceive(req, node)
+			if ok {
+				result.Success = true
+			}
+		case POWERON:
+			node := getFirstDeadNode()
+			if node == nil {
+				log.Println("No dead node found")
+				break JOBSWITCH
+			}
+			req := ClientRequest{Key: "node_active", Method: GET.String()}
+			ok, _ := JsonSendReceive(req, node)
 			if ok {
 				result.Success = true
 			}

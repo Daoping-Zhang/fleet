@@ -152,3 +152,25 @@ func parseUpdateFleetResponse(resp string) *fleetUpdateMsg {
 	}
 	return &fleetMsg
 }
+
+func getFirstAliveNode() *Node {
+	nodeLock.RLock()
+	defer nodeLock.RUnlock()
+	for _, node := range nodes {
+		if node.IsUp {
+			return &node
+		}
+	}
+	return nil
+}
+
+func getFirstDeadNode() *Node {
+	nodeLock.RLock()
+	defer nodeLock.RUnlock()
+	for _, node := range nodes {
+		if !node.IsUp {
+			return &node
+		}
+	}
+	return nil
+}

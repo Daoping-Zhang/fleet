@@ -15,6 +15,8 @@ const (
 	SET Command = iota
 	DEL
 	GET
+	POWERON  // Not really a command, but via DEL
+	POWEROFF // Not really a command, but via GET
 )
 
 func (c Command) String() string {

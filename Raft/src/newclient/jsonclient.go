@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net"
+	"strconv"
+	"strings"
 )
 
 type ClientRequest struct {
@@ -53,6 +55,28 @@ func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 	if err != nil {
 		log.Println("Error receiving response:", err)
 		return false, err.Error()
+	}
+
+	// automatic handle errors
+	if resp.Code <= 0 {
+		go func() {
+			// just group leader change, no full update
+			if strings.HasPrefix(resp.Message, "leader: ") {
+				groupLock.Lock()
+				defer groupLock.Unlock()
+				groupid := req.GroupID
+				for i, group := range groups {
+					if group.ID == groupid {
+						leader := strings.TrimPrefix(resp.Message, "leader: ")
+						leaderID, _ := strconv.Atoi(leader) // Hope there would be no error
+						groups[i].LeaderID = leaderID
+						break
+					}
+				}
+			}
+			// other failure, full update
+			updateFleet()
+		}()
 	}
 	return resp.Code > 0, resp.Message
 }

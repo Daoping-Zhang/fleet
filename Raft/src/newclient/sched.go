@@ -14,7 +14,7 @@ func hash(key string) uint64 {
 	return h.Sum64()
 }
 
-func getGroup(key string) int {
+func getHashGroup(key string) int {
 	hash := hash(key)
 	groupLock.RLock()
 	defer groupLock.RUnlock()
@@ -30,7 +30,7 @@ func SchedSendReceive(operation Command, content string) (success bool, msg stri
 	} else {
 		key = content
 	}
-	groupid := getGroup(key)
+	groupid := getHashGroup(key)
 	host := getGroupLeader(groupid)
 
 	req := ClientRequest{

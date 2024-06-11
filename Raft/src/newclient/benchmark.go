@@ -81,8 +81,9 @@ func executeTest(testName string) {
 	results := make(chan TestActionResult, totalJobs)
 
 	// create min(100, totalJobs) workers
-	for i := 0; i < min(totalJobs, 100); i++ {
+	for currWorkers < min(totalJobs, 100) {
 		go testWorker(jobs, results)
+		currWorkers++
 	}
 
 	for _, action := range test.Actions {
@@ -129,6 +130,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 		result.Latency = time.Since(start)
 		results <- result
 	}
+	currWorkers--
 }
 
 // GenerateRandomKey generates a random key with a given prefix and length.

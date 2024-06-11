@@ -16,6 +16,8 @@ func hash(key string) uint64 {
 
 func getGroup(key string) int {
 	hash := hash(key)
+	groupLock.RLock()
+	defer groupLock.RUnlock()
 	return int(hash % uint64(len(groups)))
 }
 

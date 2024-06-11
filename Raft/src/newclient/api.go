@@ -55,7 +55,9 @@ func getNodes(w http.ResponseWriter, _ *http.Request) {
 	// Return the list of hosts as a JSON array
 	w.Header().Set("Content-Type", "application/json")
 
+	nodeLock.RLock()
 	json, err := json.Marshal(nodes)
+	nodeLock.RUnlock()
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -94,8 +96,10 @@ func setFleetLeader(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use a temporary node instance
+	// Use a temporary node instance; this will be updated later
+	groupLock.RLock()
 	fleetLeader = &Node{Address: data.FleetLeaderAddress, IsUp: true}
+	groupLock.RUnlock()
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Fleet leader address updated successfully"))
 }

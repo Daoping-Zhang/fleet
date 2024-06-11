@@ -86,12 +86,16 @@ var nodeLock = sync.RWMutex{}
 var groupLock = sync.RWMutex{}
 
 func getGroupLeader(id int) *Node {
+	groupLock.RLock()
 	for _, group := range groups {
 		if group.ID == id {
 			leader := group.ID
+			nodeLock.RLock()
+			defer nodeLock.RUnlock()
 			return nodeID[leader]
 		}
 	}
+	groupLock.RUnlock()
 	return nil
 }
 
@@ -131,7 +135,9 @@ func updateFleet() {
 		}
 		groups = append(groups, newGroup)
 	}
+	nodeLock.RLock()
 	fleetLeader = nodeID[fleetMsg.FleetLeader]
+	nodeLock.RUnlock()
 	groupLock.Unlock()
 }
 

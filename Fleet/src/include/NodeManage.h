@@ -93,6 +93,8 @@ public:
      */
     std::vector<int> getIdsByGroup(int groupId);
 
+    std::vector<int> findGroupIdsByLeaderId(int leaderId);
+
     /**
      * 获取指定组的组长ID。
      * @param groupId 需要检索组长的组的标识符。
@@ -114,6 +116,8 @@ public:
     void recovery(const std::vector<int>& recovery_ids);
     
     void unbinding(int id, const sockaddr_in& addr);
+
+    sockaddr_in findLeastUsedAddress() const;
 
 
     std::vector<int> m_ids;

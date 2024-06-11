@@ -31,6 +31,8 @@
 #include "Debug.h"
 #include "ActiveIDTable.h"
 #include "AppendResponse.h"
+#include "FleetLog.h"
+#include "FleetKVstore.h"
 
 #define MAXREQ 256
 #define MAX_EVENT 20
@@ -59,6 +61,7 @@ public:
     }
     std::vector<int> m_ids;
     std::unordered_map<int, std::vector<int>> m_groups;
+    
     ActiveIDTable m_active_id_table;
     int m_leader_commit;
     std::vector<int> m_recovery_ids;
@@ -96,8 +99,10 @@ private:
     atomic<int> current_term {0};//当前任期
     vector<sockaddr_in> others_addr;//其他节点的地址
     Log log;//该节点维护的日志
+    FleetLog m_log;
     mutex mtx_append;
     kvstore kv;//该节点维护的数据库
+    FleetKVStore m_kv;
     mutex send_mutex_;//发送锁，one by one，不能冲突
 
     NodeManage m_node_manage;

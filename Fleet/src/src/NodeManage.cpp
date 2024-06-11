@@ -15,7 +15,7 @@ void NodeManage::addMapping(int id, const sockaddr_in& sockaddr) {
     if (std::find(sockaddr_to_ids[sockaddr].begin(), sockaddr_to_ids[sockaddr].end(), id) == sockaddr_to_ids[sockaddr].end()) {
         sockaddr_to_ids[sockaddr].push_back(id);
     }
-    
+
     id_to_sockaddr[id] = sockaddr;
    
 }
@@ -288,3 +288,33 @@ void NodeManage::unbinding(int id, const sockaddr_in& addr) {
         std::cout << "ID " << id << " is not bound to the given address. No action taken." << std::endl;
     }
 }
+
+sockaddr_in NodeManage::findLeastUsedAddress() const {
+    sockaddr_in leastUsedAddr;
+    int minUsage = std::numeric_limits<int>::max(); // 初始化为最大整数值，用于比较
+
+    for (const auto& pair : sockaddr_to_ids) {
+        int usage = pair.second.size(); // 获取绑定的 ID 数量
+        if (usage < minUsage) {
+            minUsage = usage;
+            leastUsedAddr = pair.first;
+        }
+    }
+
+    // 如果未找到任何地址，返回一个无效的 sockaddr_in 结构体
+    if (minUsage == std::numeric_limits<int>::max()) {
+        leastUsedAddr.sin_family = AF_UNSPEC;
+    }
+
+    return leastUsedAddr;
+}
+
+std::vector<int> NodeManage::findGroupIdsByLeaderId(int leaderId) {
+        std::vector<int> matchingGroupIds;
+        for (const auto& entry : groups) {
+            if (entry.second.leaderId == leaderId) {
+                matchingGroupIds.push_back(entry.first); // 添加匹配的 groupId
+            }
+        }
+        return matchingGroupIds;
+    }

@@ -53,6 +53,7 @@ enum MessageType {
     clientresponse,
     clientrequest,
     fleetControl,
+    fleetGroupData,
     info
 };
 

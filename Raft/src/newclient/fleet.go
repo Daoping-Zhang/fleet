@@ -1,5 +1,11 @@
 package main
 
+import (
+	"encoding/json"
+	"log"
+	"sync"
+)
+
 type Node struct {
 	Address string
 	IsUp    bool
@@ -9,6 +15,19 @@ type Group struct {
 	ID       int
 	LeaderID int
 	Nodes    []int
+}
+
+type fleetUpdateMsg struct {
+	Nodes []struct {
+		ID []int  `json:"id"`
+		IP string `json:"ip"` // actually IP:port
+	} `json:"nodes"`
+	FleetLeader int `json:"fleetLeader"`
+	Groups      []struct {
+		ID     int   `json:"id"`
+		Leader int   `json:"leader"`
+		Nodes  []int `json:"nodes"`
+	} `json:"groups"`
 }
 
 var nodes []Node = []Node{
@@ -60,6 +79,12 @@ var groups []Group = []Group{
 
 var fleetLeader *Node
 
+// Lock nodes and nodeID
+var nodeLock = sync.RWMutex{}
+
+// Lock groups and fleetLeader
+var groupLock = sync.RWMutex{}
+
 func getGroupLeader(id int) *Node {
 	for _, group := range groups {
 		if group.ID == id {
@@ -68,4 +93,54 @@ func getGroupLeader(id int) *Node {
 		}
 	}
 	return nil
+}
+
+func updateFleet() {
+	ok, msg := SchedSendAndReceive(GET, "fleet_info")
+	if !ok {
+		log.Println("Error getting fleet info:", msg)
+		return
+	}
+	fleetMsg := parseUpdateFleetResponse(msg)
+	if fleetMsg == nil {
+		log.Println("Error parsing fleet info")
+		return
+	}
+
+	// Update nodes
+	nodeLock.Lock()
+	nodeID = make(map[int]*Node)
+	nodes = []Node{}
+	for _, node := range fleetMsg.Nodes {
+		newNode := Node{Address: node.IP, IsUp: true}
+		nodes = append(nodes, newNode)
+		for _, id := range node.ID {
+			nodeID[id] = &newNode
+		}
+	}
+	nodeLock.Unlock()
+
+	// Update groups
+	groupLock.Lock()
+	groups = []Group{}
+	for _, group := range fleetMsg.Groups {
+		newGroup := Group{
+			ID:       group.ID,
+			LeaderID: group.Leader,
+			Nodes:    group.Nodes,
+		}
+		groups = append(groups, newGroup)
+	}
+	fleetLeader = nodeID[fleetMsg.FleetLeader]
+	groupLock.Unlock()
+}
+
+func parseUpdateFleetResponse(resp string) *fleetUpdateMsg {
+	var fleetMsg fleetUpdateMsg
+	err := json.Unmarshal([]byte(resp), &fleetMsg)
+	if err != nil {
+		log.Println("Error unmarshalling fleet info:", err)
+		return nil
+	}
+	return &fleetMsg
 }

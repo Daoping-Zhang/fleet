@@ -66,7 +66,7 @@ func serializeGET(key string) string {
 	return fmt.Sprintf("*2\r\n$3\r\nGET\r\n$%d\r\n%s\r\n", len(key), key)
 }
 
-func SendReceive(operation Command, content string, host Host) (response string) {
+func SendReceive(operation Command, content string, host Node) (response string) {
 	addr, err := net.ResolveTCPAddr("tcp", host.Address)
 	if err != nil {
 		fmt.Println("Error resolving address:", err)

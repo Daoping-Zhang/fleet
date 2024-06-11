@@ -19,7 +19,7 @@ func serve() {
 	mux.HandleFunc("/api/hosts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			getHosts(w, r)
+			getNodes(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -51,10 +51,11 @@ func serve() {
 	http.ListenAndServe(":8080", mux)
 }
 
-func getHosts(w http.ResponseWriter, _ *http.Request) {
+func getNodes(w http.ResponseWriter, _ *http.Request) {
 	// Return the list of hosts as a JSON array
 	w.Header().Set("Content-Type", "application/json")
-	json, err := json.Marshal(Hosts)
+
+	json, err := json.Marshal(nodes)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -93,7 +94,8 @@ func setFleetLeader(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fleetLeaderAddress = data.FleetLeaderAddress
+	// Use a temporary node instance
+	fleetLeader = &Node{Address: data.FleetLeaderAddress, IsUp: true}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Fleet leader address updated successfully"))
 }

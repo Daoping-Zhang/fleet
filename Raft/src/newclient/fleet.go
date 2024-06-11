@@ -63,7 +63,8 @@ var fleetLeader *Node
 func getGroupLeader(id int) *Node {
 	for _, group := range groups {
 		if group.ID == id {
-			return nodeID[group.LeaderID]
+			leader := group.ID
+			return nodeID[leader]
 		}
 	}
 	return nil

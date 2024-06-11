@@ -2,12 +2,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { NH1, NH2, NIcon, NSelect, NButton, NInput } from 'naive-ui'
 
-interface Host {
+interface Node {
   Address: string;
-  IsFleetLeader: boolean;
-  IsRaftLeader: boolean;
-  GroupID: number;
-  LogicalID: number;
   IsUp: boolean;
 }
 
@@ -18,28 +14,20 @@ interface Metrics {
 }
 
 // Define the nodes array using ref
-const nodes = ref<Host[]>([
+const nodes = ref<Node[]>([
   {
     Address: '192.168.1.1:1234',
-    IsFleetLeader: true,
-    IsRaftLeader: false,
-    GroupID: 1,
-    LogicalID: 1,
     IsUp: true,
   },
   {
     Address: '192.168.1.2:2432',
-    IsFleetLeader: false,
-    IsRaftLeader: true,
-    GroupID: 1,
-    LogicalID: 2,
     IsUp: false,
   },
   // Add more nodes as needed
 ]);
 
 // Define the method to get the node color
-const getNodeColor = (node: Host): string => {
+const getNodeColor = (node: Node): string => {
   return node.IsUp ? 'green' : 'red';
 };
 
@@ -79,7 +67,7 @@ const fetchNodeStatus = async () => {
   try {
     const response = await fetch('/api/hosts');
     if (response.ok) {
-      const data: Host[] = await response.json();
+      const data: Node[] = await response.json();
       nodes.value = data;
     } else {
       console.error('Failed to fetch node status:', response.statusText);
@@ -150,7 +138,7 @@ onMounted(() => {
       </div>
       <n-h2 prefix="bar">Node Status</n-h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        <div v-for="node in nodes" :key="node.LogicalID" class="flex items-center p-2 border rounded shadow">
+        <div v-for="node in nodes" :key="node.Address" class="flex items-center p-2 border rounded shadow">
           <n-icon :color="getNodeColor(node)" size="24">
             <template v-slot:default>
               <svg viewBox="0 0 24 24" class="w-6 h-6">

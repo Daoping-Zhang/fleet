@@ -20,11 +20,20 @@ type Test struct {
 	Actions []TestAction // Actions should be ascending by time
 }
 
-type TestResult struct {
+// the result of a single test action
+type TestActionResult struct {
 	Action  Command
 	Success bool
 	Latency time.Duration
 	Bytes   int // Bytes sent during the operation, raw text instead of real message
+}
+
+// the result of a test (all actions)
+type TestResult struct {
+	TotalBytes int
+	TotalTime  time.Duration
+	SuccessNum int
+	TotalNum   int
 }
 
 var Tests []Test = []Test{}
@@ -69,7 +78,7 @@ func executeTest(testName string) {
 		totalJobs += action.Repeat
 	}
 	jobs := make(chan Command, totalJobs)
-	results := make(chan TestResult, totalJobs)
+	results := make(chan TestActionResult, totalJobs)
 
 	// create min(100, totalJobs) workers
 	for i := 0; i < min(totalJobs, 100); i++ {
@@ -89,32 +98,31 @@ func executeTest(testName string) {
 
 }
 
-func testWorker(jobs <-chan Command, results chan<- TestResult) {
+func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 	for job := range jobs {
-		result := TestResult{Action: job}
+		result := TestActionResult{Action: job}
 		start := time.Now()
 		switch job {
 		case SET:
 			key := GenerateRandomKey("test", 10)
 			value := GenerateRandomValue(10)
-			resp := SchedSendAndReceive(SET, key+" "+value)
-			// TODO: check success
-			if resp == "success" {
+			ok, _ := SchedSendAndReceive(SET, key+" "+value)
+			if ok {
 				result.Success = true
 				keys[key] = true
 			}
 			result.Bytes = len(key) + len(value) + 1
 		case DEL:
 			key := getRandExistingKey()
-			resp := SchedSendAndReceive(DEL, key)
-			if resp=="success" {
+			ok, _ := SchedSendAndReceive(DEL, key)
+			if ok {
 				result.Success = true
 				keys[key] = false
 			}
 		case GET:
 			key := getRandExistingKey()
-			resp := SchedSendAndReceive(GET, key)
-			if resp=="success" {
+			ok, _ := SchedSendAndReceive(GET, key)
+			if ok {
 				result.Success = true
 			}
 		}
@@ -139,7 +147,7 @@ func GenerateRandomValue(length int) string {
 
 func getRandExistingKey() string {
 	for k, v := range keys {
-		if v == true {
+		if v {
 			return k
 		}
 	}

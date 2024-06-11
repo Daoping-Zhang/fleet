@@ -21,7 +21,7 @@ type ClientResponse struct {
 
 // Similar with SendReceive in client.go, but in new JSON format;
 // Also, the wrapping of request is done in schedule
-func JsonSendReceive(req ClientRequest, host Host) (success bool, msg string) {
+func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 	addr, err := net.ResolveTCPAddr("tcp", host.Address)
 	if err != nil {
 		log.Println("Error resolving address:", err)

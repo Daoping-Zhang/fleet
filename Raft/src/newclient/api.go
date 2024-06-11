@@ -100,6 +100,8 @@ func setFleetLeader(w http.ResponseWriter, r *http.Request) {
 	groupLock.RLock()
 	fleetLeader = &Node{Address: data.FleetLeaderAddress, IsUp: true}
 	groupLock.RUnlock()
+	// Do full fleet update
+	updateFleet()
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Fleet leader address updated successfully"))
 }

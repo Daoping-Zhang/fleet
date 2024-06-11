@@ -107,7 +107,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 		case SET:
 			key := GenerateRandomKey("test", 10)
 			value := GenerateRandomValue(10)
-			ok, _ := SchedSendAndReceive(SET, key+" "+value)
+			ok, _ := SchedSendReceive(SET, key+" "+value)
 			if ok {
 				result.Success = true
 				keys[key] = true
@@ -115,14 +115,14 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 			result.Bytes = len(key) + len(value) + 1
 		case DEL:
 			key := getRandExistingKey()
-			ok, _ := SchedSendAndReceive(DEL, key)
+			ok, _ := SchedSendReceive(DEL, key)
 			if ok {
 				result.Success = true
 				keys[key] = false
 			}
 		case GET:
 			key := getRandExistingKey()
-			ok, _ := SchedSendAndReceive(GET, key)
+			ok, _ := SchedSendReceive(GET, key)
 			if ok {
 				result.Success = true
 			}

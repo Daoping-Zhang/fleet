@@ -100,7 +100,9 @@ func getGroupLeader(id int) *Node {
 }
 
 func updateFleet() {
-	ok, msg := SchedSendAndReceive(GET, "fleet_info")
+	// Cannot use SchedSendReceive here, fleet info has not been updated yet
+	req := ClientRequest{Key: "fleet_info", Method: GET.String()}
+	ok, msg := JsonSendReceive(req, fleetLeader)
 	if !ok {
 		log.Println("Error getting fleet info:", msg)
 		return

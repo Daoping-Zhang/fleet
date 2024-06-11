@@ -21,7 +21,7 @@ func getGroup(key string) int {
 	return int(hash % uint64(len(groups)))
 }
 
-func SchedSendAndReceive(operation Command, content string) (success bool, msg string) {
+func SchedSendReceive(operation Command, content string) (success bool, msg string) {
 	var key, value string
 	if operation == SET {
 		parts := strings.SplitN(content, " ", 2)
@@ -42,3 +42,4 @@ func SchedSendAndReceive(operation Command, content string) (success bool, msg s
 	}
 	return JsonSendReceive(req, host)
 }
+

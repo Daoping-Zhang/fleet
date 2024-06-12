@@ -8,10 +8,10 @@ OBJS := $(SRCS:.cpp=.o)
 kvstoreraftsystem: $(OBJS)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
-./src/kvstoresystem.o: ./src/kvstoresystem.cpp ./include/raftnode.h
+./src/kvstoresystem.o: ./src/kvstoresystem.cpp ./include/raftnode.h 
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-./src/raftnode.o: ./src/raftnode.cpp ./include/raftnode.h ./include/threadpool.h ./include/log.h ./include/kvstore.h ./include/NodeManage.h
+./src/raftnode.o: ./src/raftnode.cpp ./include/raftnode.h ./include/threadpool.h ./include/log.h ./include/kvstore.h ./include/NodeManage.h ./include/FleetGroupReceiveData.h ./include/FleetGroupSendData.h ./include/Initialize.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 ./src/message.o: ./src/message.cpp ./include/message.h
@@ -32,4 +32,3 @@ kvstoreraftsystem: $(OBJS)
 .PHONY: clean
 clean:
 	rm -f $(OBJS) kvstoreraftsystem
-

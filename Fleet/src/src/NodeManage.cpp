@@ -289,25 +289,37 @@ void NodeManage::unbinding(int id, const sockaddr_in& addr) {
     }
 }
 
-sockaddr_in NodeManage::findLeastUsedAddress() const {
+sockaddr_in NodeManage::findLeastUsedAddress(const std::vector<int>& activeIds) {
+    std::unordered_map<sockaddr_in, int , SockaddrInHash, SockaddrInEqual> activeAddrUsage;
+    
     sockaddr_in leastUsedAddr;
     int minUsage = std::numeric_limits<int>::max(); // 初始化为最大整数值，用于比较
 
+    // 构建 activeAddrs 并计算每个地址的使用情况
     for (const auto& pair : sockaddr_to_ids) {
-        int usage = pair.second.size(); // 获取绑定的 ID 数量
-        if (usage < minUsage) {
-            minUsage = usage;
-            leastUsedAddr = pair.first;
+        for (int id : pair.second) {
+            if (std::find(activeIds.begin(), activeIds.end(), id) != activeIds.end()) {
+                activeAddrUsage[pair.first]++; // 计算这个地址的使用次数
+            }
         }
     }
 
-    // 如果未找到任何地址，返回一个无效的 sockaddr_in 结构体
+    // 找到绑定最少ID数量的地址
+    for (const auto& addrPair : activeAddrUsage) {
+        if (addrPair.second < minUsage) {
+            minUsage = addrPair.second;
+            leastUsedAddr = addrPair.first;
+        }
+    }
+
+    // 如果未找到任何有效的地址，返回一个无效的 sockaddr_in 结构体
     if (minUsage == std::numeric_limits<int>::max()) {
         leastUsedAddr.sin_family = AF_UNSPEC;
     }
 
     return leastUsedAddr;
 }
+
 
 std::vector<int> NodeManage::findGroupIdsByLeaderId(int leaderId) {
         std::vector<int> matchingGroupIds;

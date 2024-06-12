@@ -109,6 +109,18 @@ public:
      */
     std::vector<int> getGroupIndicesWithMemberId(int memberId);
 
+        std::vector<int> getMembersByGroupId(int groupId) {
+        // 检查groupId是否存在
+        if (groups.find(groupId) != groups.end()) {
+            return groups[groupId].memberIds;
+        } else {
+            // 如果groupId不存在，返回空的vector
+            return {};
+        }
+    }
+
+    
+
     void createGroupsFromIds(const std::vector<int>& m_ids);
     
     sockaddr_in findAddressWithFirstId(int id) const;
@@ -117,7 +129,7 @@ public:
     
     void unbinding(int id, const sockaddr_in& addr);
 
-    sockaddr_in findLeastUsedAddress() const;
+    sockaddr_in findLeastUsedAddress(const std::vector<int>& activeIds);
 
 
     std::vector<int> m_ids;

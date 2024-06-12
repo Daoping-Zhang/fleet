@@ -33,6 +33,9 @@
 #include "AppendResponse.h"
 #include "FleetLog.h"
 #include "FleetKVstore.h"
+#include "FleetGroupSendData.h"
+#include "FleetGroupReceiveData.h"
+#include "Initialize.h"
 
 #define MAXREQ 256
 #define MAX_EVENT 20
@@ -67,6 +70,9 @@ public:
     std::vector<int> m_recovery_ids;
     bool m_recovery = false;
 
+    void checkAndUpdateIds(); // 添加的用于检查和更新ID的方法
+
+
 
 private:
     void accept_connections();//管理连接，epoll机制
@@ -74,6 +80,11 @@ private:
     void do_log();//处理日志
     void rebindInactiveIds(NodeManage& nodeManage, ActiveIDTable& activeTable);
     void generateGroupsMap();
+    void sendGroupLog();
+
+    void updateIds(const std::vector<int>& newIds); // 添加的用于更新ID的方法
+    void initializeNewId(int newId, bool init); // 初始化新ID的方法
+    void removeOldIdData(int oldId); // 删除旧ID相关数据的方法
     
 
     void FollowerLoop();//跟随者状态循环，包括等待一段时间并转换为候选者状态
@@ -81,7 +92,11 @@ private:
     //向其他节点发送 RequestVote 消息并等待投票结果，如果获得多数选票，则成为 Leader
     void LeaderLoop();//领导者状态循环，包括向其他节点发送 AppendEntries 消息并等待响应，如果收到多数节点的确认，则提交日志条目
     void sendmsg(int &fd,struct sockaddr_in addr,Message msg);//发送信息
+
+    void executeEntries(int groupId, uint64_t now_commitIndex, uint64_t latestIndex, FleetKVStore& kv, FleetLog& log);
+    
     bool m_init = true; //判断是否是刚开始
+
 
 private:
 

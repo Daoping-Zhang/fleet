@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -30,12 +31,15 @@ type TestActionResult struct {
 }
 
 // the result of a test (all actions)
-type TestResult struct {
-	TotalBytes int
-	TotalTime  time.Duration
-	SuccessNum int
-	TotalNum   int
+var TestResult struct {
+	TotalBytes   int  `json:"totalBytes"`
+	SuccessJobs  int  `json:"successJobs"`
+	CompleteJobs int  `json:"completeJobs"`
+	TotalJobs    int  `json:"totalJobs"`
+	Completed    bool `json:"completed"`
 }
+
+var TestResultLock = &sync.RWMutex{}
 
 var Tests []Test = []Test{}
 
@@ -73,16 +77,24 @@ func executeTest(testName string) {
 		return
 	}
 
+	// Clear job info
+	TestResultLock.Lock()
+	TestResult.TotalJobs = 0
+	TestResult.CompleteJobs = 0
+	TestResult.SuccessJobs = 0
+	TestResult.TotalBytes = 0
+	TestResult.Completed = false
+	TestResultLock.Unlock()
+
 	// Get total job count, and create channels
-	totalJobs := 0
 	for _, action := range test.Actions {
-		totalJobs += action.Repeat
+		TestResult.TotalJobs += action.Repeat
 	}
-	jobs := make(chan Command, totalJobs)
-	results := make(chan TestActionResult, totalJobs)
+	jobs := make(chan Command, TestResult.TotalJobs)
+	results := make(chan TestActionResult, TestResult.TotalJobs)
 
 	// create min(100, totalJobs) workers
-	for currWorkers < min(totalJobs, 100) {
+	for currWorkers < min(TestResult.TotalJobs, 100) {
 		go testWorker(jobs, results)
 		currWorkers++
 	}
@@ -93,11 +105,19 @@ func executeTest(testName string) {
 		}
 	}
 
-	for i := 0; i < totalJobs; i++ {
-		_ = <-results
-		// TODO: Do something with the result
+	for i := 0; i < TestResult.TotalJobs; i++ {
+		result := <-results
+		TestResultLock.Lock()
+		TestResult.TotalBytes += result.Bytes
+		TestResult.CompleteJobs++
+		if result.Success {
+			TestResult.SuccessJobs++
+		}
+		TestResultLock.Unlock()
 	}
-
+	TestResultLock.Lock()
+	TestResult.Completed = true
+	TestResultLock.Unlock()
 }
 
 func testWorker(jobs <-chan Command, results chan<- TestActionResult) {

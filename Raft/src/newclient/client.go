@@ -20,7 +20,7 @@ const (
 )
 
 func (c Command) String() string {
-	return [...]string{"SET", "DEL", "GET"}[c]
+	return [...]string{"SET", "DEL", "GET", "POWERON", "POWEROFF"}[c]
 }
 
 func CommandFromString(s string) Command {

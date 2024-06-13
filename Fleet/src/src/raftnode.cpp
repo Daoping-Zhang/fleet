@@ -110,6 +110,7 @@ Node::Node(string config_path){
     //m_ids.push_back(id);
     m_node_manage.printAllMappings();
     m_init = true;
+    m_recovery = false;
     m_leader_commit = 0;
 
     handle_for_sigpipe();// 设置SIGPIPE信号处理方式为忽略，这样当send_fd中的fd失效时，node send不会导致程序崩溃
@@ -147,7 +148,7 @@ void Node::FollowerLoop() {
         delay1 = distribution1(generator1);
         //cout<<"delay1"<<delay1<<endl;
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(2*delay1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(7*delay1));
         //检验
         if(recv_heartbeat==false)//如果一个周期结束了还没有收到心跳，那么转换为竞选者
         {
@@ -177,6 +178,17 @@ void Node::CandidateLoop() {
 
         num_votes=m_ids.size();//首先投自己一票
         voted=true;//已经投票，不给别人投了
+
+                    if(num_votes>num/2){ 
+                    cout<<id<<" become a leader"<<endl;
+                    cout<<"---------------"<<endl;
+                    match_index.resize(num-1,log.latest_index());
+                    match_term.resize(num-1,log.term_at(log.latest_index()));
+                    live=5;
+                    state=LEADER;
+                }//一旦票数大于一半，就变成leader
+
+
         for(int i=0;i<num-1;i++)//向其他节点发送投票请求
         {
             RequestVote need_vote{current_term,turn_id(id,i),log.latest_index(),log.latest_term()};
@@ -239,47 +251,12 @@ void Node::LeaderLoop() {
             }
 
             delay3 = distribution3(generator3);
-            std::this_thread::sleep_for(std::chrono::milliseconds(2*delay3));
+            std::this_thread::sleep_for(std::chrono::milliseconds(4*delay3));
             
            
             m_init = false;
-            
 
-                    for(int i=0;i<num-1;i++)
-                    {
-                        AppendEntries heartbeat;
-                        heartbeat.leader_id=id;//leader的id，用于follower返回
-                        heartbeat.term=current_term;//leader的term，用于同步所有节点的term
-                        heartbeat.leader_commit=log.committed_index();//leader最新提交的目录索引
-                        heartbeat.leader_commit = m_leader_commit;
-                        if(m_active_id_table.getAllActiveIDs().size()>m_active_id_table.getAllInactiveIDs().size())
-                        {
-                            heartbeat.identify = true;
-                        }
-                        else
-                        {
-                            heartbeat.identify = false;
-                        }
-                        mtx_match.lock();
-                        heartbeat.prev_log_index=match_index[i];//leader最近一条复制到follower（i)的条目的索引
-                        heartbeat.prev_log_term=log.term_at(match_index[i]);//leader最近一条复制到follower（i)条目的周期
-                        mtx_match.unlock();
-                        for(int j=1;j<=3;j++){
-                            if(match_index[i]+j<=log.latest_index()){//同步的entry
-                                strncpy(heartbeat.entries[j-1],log.entry_at(match_index[i]+j).c_str(), sizeof(heartbeat.entries[j-1]));//要复制给follower（i）的条目的index
-                                //heartbeat.entries[j][sizeof(heartbeat.entries[j]) - 1] = '\0';
-                                heartbeat.entries_term[j-1]=log.term_at(match_index[i]+j);//要复制给follower（i）的条目的term
-                            }
-                            else{//如果复制给follower（i）的条目已经是leader的最新条目了，则用F标识（如果三条entry都是F，则是纯粹的心跳信息）
-                                heartbeat.entries[j-1][0]='F';
-                                heartbeat.entries_term[j-1]=0;
-                            }
-                        }
-                        Message message=toMessage(appendentries,&heartbeat,sizeof(heartbeat));
-                                    
-
-                        sendmsg(send_fd[i],others_addr[i],message);
-                    }                    
+            sendHeartBeat();
 
 
         }
@@ -291,7 +268,9 @@ void Node::LeaderLoop() {
 
                 if(m_active_id_table.getAllActiveIDs().size()>m_active_id_table.getAllInactiveIDs().size())
             {   
-                
+                sendHeartBeat();  
+                sendGroupLog();               
+
                 
 
                 if(m_recovery)
@@ -331,7 +310,7 @@ void Node::LeaderLoop() {
 
                     m_recovery_ids.clear();
                     delay3 = distribution3(generator3);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(2*delay3));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(4*delay3));
 
 
                 }
@@ -372,53 +351,16 @@ void Node::LeaderLoop() {
                     }
 
                     delay3 = distribution3(generator3);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(2*delay3));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(6*delay3));
 
                 }
                    
-                    m_active_id_table.setAllInactive();                   
-                    for (int id : m_ids)
-                    {
-                        m_active_id_table.setActive(id,true);
-                    }
-
-                    for(int i=0;i<num-1;i++)
-                    {
-                        AppendEntries heartbeat;
-                        heartbeat.leader_id=id;//leader的id，用于follower返回
-                        heartbeat.term=current_term;//leader的term，用于同步所有节点的term
-                        heartbeat.leader_commit=log.committed_index();//leader最新提交的目录索引
-                        heartbeat.leader_commit = m_node_manage.commit_num;
-                        if(m_active_id_table.getAllActiveIDs().size()>m_active_id_table.getAllInactiveIDs().size())
-                        {
-                            heartbeat.identify = true;
-                        }
-                        else
-                        {
-                            heartbeat.identify = false;
-                        }
-                        mtx_match.lock();
-                        heartbeat.prev_log_index=match_index[i];//leader最近一条复制到follower（i)的条目的索引
-                        heartbeat.prev_log_term=log.term_at(match_index[i]);//leader最近一条复制到follower（i)条目的周期
-                        mtx_match.unlock();
-                        for(int j=1;j<=3;j++){
-                            if(match_index[i]+j<=log.latest_index()){//同步的entry
-                                strncpy(heartbeat.entries[j-1],log.entry_at(match_index[i]+j).c_str(), sizeof(heartbeat.entries[j-1]));//要复制给follower（i）的条目的index
-                                //heartbeat.entries[j][sizeof(heartbeat.entries[j]) - 1] = '\0';
-                                heartbeat.entries_term[j-1]=log.term_at(match_index[i]+j);//要复制给follower（i）的条目的term
-                            }
-                            else{//如果复制给follower（i）的条目已经是leader的最新条目了，则用F标识（如果三条entry都是F，则是纯粹的心跳信息）
-                                heartbeat.entries[j-1][0]='F';
-                                heartbeat.entries_term[j-1]=0;
-                            }
-                        }
-                        Message message=toMessage(appendentries,&heartbeat,sizeof(heartbeat));
-                                    
-
-                        sendmsg(send_fd[i],others_addr[i],message);
-                }                    
-
-                sendGroupLog();
+                m_active_id_table.setAllInactive();
+                for(int id : m_ids)
+                {
+                    m_active_id_table.setActive(id,true);
+                }  
+                
 
                 
             }else
@@ -499,6 +441,14 @@ void Node::work(int fd)
             {
                 Debug::log("初始化");
                 //m_node_manage.createGroupsFromIds(m_node_manage.m_ids);
+
+                m_init = false;
+            }
+
+            if(m_recovery)
+
+            {
+                Debug::log("节点恢复");
                 int id = m_ids[0];
                 m_ids.clear();
                 m_ids[0] = id;
@@ -512,16 +462,14 @@ void Node::work(int fd)
                 
 
                 initializeNewId(m_ids[0], true);
-
-
-
-                m_init = false;
+                m_recovery = false;
             }
             Debug::log("同步node Manage");
 
             checkAndUpdateIds();
 
             generateGroupsMap(); //必须先更新m_ids;
+
             m_node_manage.printAllMappings();
 
             recv_heartbeat = true;
@@ -551,6 +499,7 @@ void Node::work(int fd)
         }
         else if(type==appendentries)//心跳（条目数为0）|日志同步信息（更新条目），leader->follower
         {
+            
             AppendEntries recv_info;
             recv_info=getAppendEntries(message_recv);
             if(state==FOLLOWER)
@@ -560,7 +509,7 @@ void Node::work(int fd)
                 if(m_node_manage.commit_num < recv_info.leader_commit)
                 {
                     res.identify = true;
-                    m_init = true;
+                    m_recovery = true;
                 }
                 else
                 {
@@ -653,6 +602,16 @@ void Node::work(int fd)
             InitializeData recv_info;
             std::string receivedString(message_recv.data);
             recv_info=recv_info.deserialize(receivedString);
+            if(recv_info.m_id == leader_id)
+            {
+                recv_heartbeat = true;
+            }
+
+            if(std::find(m_ids.begin(), m_ids.end(), leader_id) != m_ids.end())
+            {
+                m_active_id_table.setActive(recv_info.m_id,true);
+            }
+
 
             int group_id = recv_info.group_id;
 
@@ -697,6 +656,16 @@ void Node::work(int fd)
             recv_info=recv_info.deserialize(receivedString);
 
             int group_id = recv_info.group_id;
+
+            if(recv_info.m_id == leader_id)
+            {
+                recv_heartbeat = true;
+            }
+
+            if(std::find(m_ids.begin(), m_ids.end(), leader_id) != m_ids.end())
+            {
+                m_active_id_table.setActive(recv_info.m_id,true);
+            }
 
             m_kv.deserializeGroup(group_id, recv_info.serializedData);
 
@@ -779,6 +748,8 @@ void Node::work(int fd)
                 int send_id = m_node_manage.getLeaderIdByGroup(recv_info.group_id);
 
                 sendmsg(send_fd[send_id],m_node_manage.getSockaddrById(send_id),message);
+                std::cout<<"send_id: "<<send_id<<std::endl;
+                printAddressInfo(m_node_manage.getSockaddrById(send_id));
 
                       
             }
@@ -1003,7 +974,7 @@ void Node::work(int fd)
             {
 
             }
-            if(state==LEADER){//client->leader
+            if(false){//client->leader
 
             
                 cout<<"get a client ask(leader)"<<endl;
@@ -1181,6 +1152,30 @@ void Node::accept_connections() {
 void Node::sendmsg(int &fd,struct sockaddr_in addr,Message msg){
     lock_guard<std::mutex> lock(send_mutex_);  // 加锁
     int ret;
+    close(fd);
+        // 创建新的套接字
+        fd = socket(AF_INET, SOCK_STREAM, 0);
+        // 连接服务器
+        ret = connect(fd, (struct sockaddr*)&addr, sizeof(addr));
+        if (ret <0) { // 重新连接失败
+            // 处理连接失败的情况
+            //cout << "reconnect failed" << endl;
+            fd=-1;
+        } 
+        else { // 重新连接成功
+            // 发送消息
+            //cout<<"连接node成功"<<endl;
+            ret = sendMessage(fd,msg);
+            if (ret ==-1) { // 发送消息失败
+                // 处理发送消息失败的情况
+                cout << "close connect" << endl;
+            }
+            else
+            {
+                //cout<<"no idea"<<endl;
+            }
+        }
+        /*
     if(fd!=-1)
     {
         //cout<<"send"<<endl;
@@ -1212,7 +1207,7 @@ void Node::sendmsg(int &fd,struct sockaddr_in addr,Message msg){
                 cout<<"no idea"<<endl;
             }
         }
-    } 
+    } */
 }
 
 
@@ -1334,6 +1329,11 @@ void Node::sendGroupLog()
                             // 发送消息
                             sendmsg(send_fd[id], addr, message);
 
+                            std::cout<<"send_id: "<<id<<std::endl;
+                            printAddressInfo(addr);
+
+
+
                             // 将该地址标记为已发送
                             sentAddresses.insert(addrStr);
                         }
@@ -1452,3 +1452,50 @@ void Node::checkAndUpdateIds() {
     std::vector<int> newIds = m_node_manage.getIdsBySockaddr(servaddr); // 获取新的 ID 列表
     updateIds(newIds); // 更新 ID 列表
 }
+
+void Node::sendHeartBeat()
+{
+                    for(int i=0;i<num-1;i++)
+                    {
+                        AppendEntries heartbeat;
+                        heartbeat.leader_id=id;//leader的id，用于follower返回
+                        heartbeat.term=current_term;//leader的term，用于同步所有节点的term
+                        heartbeat.leader_commit=log.committed_index();//leader最新提交的目录索引
+                        heartbeat.leader_commit = m_leader_commit;
+                        if(m_active_id_table.getAllActiveIDs().size()>m_active_id_table.getAllInactiveIDs().size())
+                        {
+                            heartbeat.identify = true;
+                        }
+                        else
+                        {
+                            heartbeat.identify = false;
+                        }
+                        mtx_match.lock();
+                        heartbeat.prev_log_index=match_index[i];//leader最近一条复制到follower（i)的条目的索引
+                        heartbeat.prev_log_term=log.term_at(match_index[i]);//leader最近一条复制到follower（i)条目的周期
+                        mtx_match.unlock();
+                        for(int j=1;j<=3;j++){
+                            if(match_index[i]+j<=log.latest_index()){//同步的entry
+                                strncpy(heartbeat.entries[j-1],log.entry_at(match_index[i]+j).c_str(), sizeof(heartbeat.entries[j-1]));//要复制给follower（i）的条目的index
+                                //heartbeat.entries[j][sizeof(heartbeat.entries[j]) - 1] = '\0';
+                                heartbeat.entries_term[j-1]=log.term_at(match_index[i]+j);//要复制给follower（i）的条目的term
+                            }
+                            else{//如果复制给follower（i）的条目已经是leader的最新条目了，则用F标识（如果三条entry都是F，则是纯粹的心跳信息）
+                                heartbeat.entries[j-1][0]='F';
+                                heartbeat.entries_term[j-1]=0;
+                            }
+                        }
+                        Message message=toMessage(appendentries,&heartbeat,sizeof(heartbeat));
+                                    
+
+                        sendmsg(send_fd[i],others_addr[i],message);
+                        //printAddressInfo(others_addr[i]);
+                    }     
+}
+
+void Node::printAddressInfo(const sockaddr_in& addr) {
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(addr.sin_addr), ip, INET_ADDRSTRLEN);
+    std::cout << "发送地址：IP Address: " << ip << ", Port: " << ntohs(addr.sin_port) << std::endl;
+}
+

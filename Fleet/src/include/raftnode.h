@@ -81,6 +81,8 @@ private:
     void rebindInactiveIds(NodeManage& nodeManage, ActiveIDTable& activeTable);
     void generateGroupsMap();
     void sendGroupLog();
+    void sendHeartBeat();
+    void printAddressInfo(const sockaddr_in& addr);
 
     void updateIds(const std::vector<int>& newIds); // 添加的用于更新ID的方法
     void initializeNewId(int newId, bool init); // 初始化新ID的方法

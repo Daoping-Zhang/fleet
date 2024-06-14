@@ -23,6 +23,7 @@
         "condition_variable": "cpp",
         "cstdint": "cpp",
         "deque": "cpp",
+        "forward_list": "cpp",
         "map": "cpp",
         "set": "cpp",
         "string": "cpp",
@@ -62,14 +63,8 @@
         "thread": "cpp",
         "cinttypes": "cpp",
         "typeinfo": "cpp",
-        "__nullptr": "cpp",
-        "forward_list": "cpp",
         "valarray": "cpp",
         "unordered_set": "cpp",
-        "filesystem": "cpp",
-        "__bit_reference": "cpp",
-        "__hash_table": "cpp",
-        "__split_buffer": "cpp",
-        "__tree": "cpp"
+        "__nullptr": "cpp"
     }
 }

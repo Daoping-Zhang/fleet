@@ -841,8 +841,18 @@ void Node::work(int fd)
                     Debug::log("开始");
 
                     mtx_append.lock();
-                    executeEntries(group_id, m_log.getCommittedIndex(group_id), latestIndex , m_kv, m_log);
+                    if (m_log.getCommittedIndex(group_id) < latestIndex)
+                     {
+
+                        m_log.commit(group_id, latestIndex);
+                        Debug::log("成功提交");
+                        
+                    }
+
                     mtx_append.unlock();
+
+                        
+                                            
 
                     
 
@@ -989,6 +999,8 @@ void Node::work(int fd)
             }
         }
         else if(type==info){//客户端client的请求，client->leader（直接回应）|follower（中转）|candidate(fail)
+
+
             string s = getString(message_recv);
             Debug::log("收到client请求");
             json receiveJson = json::parse(s);
@@ -999,30 +1011,95 @@ void Node::work(int fd)
             uint64_t hashKey = receiveJson["hashKey"];
             int groupId = receiveJson["groupId"];
 
-                // 打印 JSON 对象中的字段
-            std::cout << "Key: " << key << std::endl;
-            std::cout << "Value: " << value << std::endl;
-            std::cout << "Method: " << method << std::endl;
-            std::cout << "HashKey: " << hashKey << std::endl;
-            std::cout << "GroupId: " << groupId << std::endl;
-            
-
-            LogEntry entry(key, value, method, hashKey, m_node_manage.commit_num);
+            mtx_append.lock();
             uint64_t commitIndex = m_log.getCommittedIndex(groupId);
             uint64_t latestIndex = m_log.getLatestIndex(groupId);  
-            std::cout<<commitIndex<<std::endl;
-            std::cout<<latestIndex<<std::endl;        
-            mtx_append.lock();
-            m_log.append(groupId, entry);
             mtx_append.unlock();
-            commitIndex = m_log.getCommittedIndex(groupId);
-            latestIndex = m_log.getLatestIndex(groupId);  
-            std::cout<<commitIndex<<std::endl;
-            std::cout<<latestIndex<<std::endl;   
-            while(false)
+
+            json response;
+
+            if(method == "GET")
+            {
+                if(key == "fleet_info")
+                {
+                    Debug::log("返回控制信息");
+                    response = m_node_manage.serializeNetworkInfo(leader_id);
+                    m_node_manage.printNetworkInfo(leader_id);
+                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+                    return;
+                }
+
+                else if (key == "node_active")
+                {
+                    Debug::log("恢复");
+                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+                    return;
+                }
+                
+
+                else
+                {
+                    Debug::log("处理GET请求");
+                }
+               
+            }
+            else if(method == "SET")
             {
 
+                
+    
+              
+                Debug::log("处理SET操作");
+                LogEntry entry(key, value, method, hashKey, m_node_manage.commit_num);
+
+                std::cout<<commitIndex<<std::endl;
+                std::cout<<latestIndex<<std::endl;        
+                mtx_append.lock();
+                m_log.append(groupId, entry);
+                mtx_append.unlock();
+                commitIndex = m_log.getCommittedIndex(groupId);
+                latestIndex = m_log.getLatestIndex(groupId);  
+                
             }
+            else if(method == "DEL")
+            {
+                if(key == "node_active")
+                {
+                    Debug::log("假死");
+                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+                    return;
+                }
+                else
+                {
+                    Debug::log("处理DEL操作");
+                    LogEntry entry(key, value, method, hashKey, m_node_manage.commit_num);
+
+                    std::cout<<commitIndex<<std::endl;
+                    std::cout<<latestIndex<<std::endl;        
+                    mtx_append.lock();
+                    m_log.append(groupId, entry);
+                    mtx_append.unlock();
+                    commitIndex = m_log.getCommittedIndex(groupId);
+                    latestIndex = m_log.getLatestIndex(groupId);                      
+                }
+            }
+
+            while(m_log.getCommittedIndex(groupId) < latestIndex)
+                {
+
+                }
+            response = m_kv.handleRequest(receiveJson);
+            Debug::log("成功提交并响应客户端");
+            string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+            send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+            
+
+
+ 
+
             if(false){//client->leader
 
             
@@ -1269,7 +1346,7 @@ void Node::rebindInactiveIds(NodeManage& nodeManage, ActiveIDTable& activeTable)
 void Node::executeEntries(int groupId, uint64_t now_commitIndex, uint64_t latestIndex, FleetKVStore& kv, FleetLog& log)
 {
      // 确保我们不会试图处理不存在的日志条目
-    if (now_commitIndex > latestIndex) {
+    if (now_commitIndex >= latestIndex) {
         std::cout << "没有新的提交需要处理。" << std::endl;
         return;
     }
@@ -1290,7 +1367,7 @@ void Node::executeEntries(int groupId, uint64_t now_commitIndex, uint64_t latest
             }
         } else if (entry.method == "DEL") {
             // 如果是DEL操作，删除键值对
-            if (kv.deleteDataItem(entry.key, entry.hashKey, groupId)) {
+            if (kv.deleteDataItems(entry.key, entry.hashKey, groupId)) {
                 std::cout << "Key: " << entry.key << " deleted." << std::endl;
             } else {
                 std::cout << "Failed to delete key: " << entry.key << std::endl;

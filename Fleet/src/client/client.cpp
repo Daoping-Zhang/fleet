@@ -17,7 +17,22 @@ void send_receive(int sock, const json& message) {
     send(sock, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
     char buffer[1024] = {0};
     recv(sock, buffer, 1024, 0);  // 接收响应
-    cout << "Response: " << buffer << endl;  // 打印服务器响应
+
+    // 尝试解析接收到的 JSON 数据
+    try {
+        json received_json = json::parse(buffer);  // 解析接收到的 JSON 字符串
+        cout << "Received JSON:\n" << received_json.dump(4) << endl;  // 美化打印 JSON 数据
+
+        // 可以进一步处理 JSON 数据，例如访问特定字段
+        if (received_json.contains("code")) {
+            cout << "Response Code: " << received_json["code"] << endl;
+        }
+        if (received_json.contains("value")) {
+            cout << "Response Value: " << received_json["value"] << endl;
+        }
+    } catch (json::parse_error& e) {
+        cout << "Error parsing JSON response: " << e.what() << endl;
+    }
 }
 
 int main() {

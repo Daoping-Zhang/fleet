@@ -22,28 +22,40 @@ public:
     // 使用双层unordered_map，第一层按组ID，第二层按hashKey分类
     std::unordered_map<int, std::unordered_map<uint64_t, std::vector<DataItem>>> database;
 
-    // 添加数据项
-    void addDataItem(const DataItem& item) {
-        database[item.groupId][item.hashKey].emplace_back(item);
-    }
+
+
 
     // 设置数据项
     bool setDataItem(const DataItem& item) {
-        // 直接添加或更新数据项
-        database[item.groupId][item.hashKey].push_back(item);
-        return true;  // 假设操作总是成功
+        auto& items = database[item.groupId][item.hashKey];
+        for (auto& existingItem : items) {
+            if (existingItem.key == item.key) {
+                existingItem.value = item.value; // 更新现有的值
+                return true; // 成功更新
+            }
+        }
+        // 如果没有找到，就添加新的条目
+        items.emplace_back(item);
+        return true; // 假设操作总是成功
     }
 
+
     // 删除特定键的数据项
-    bool deleteDataItem(const std::string& key, uint64_t hashKey, int groupId) {
-        // 查找并删除数据项
+    int deleteDataItems(const std::string& keys, uint64_t hashKey, int groupId) {
+        int deletedCount = 0;
         auto& items = database[groupId][hashKey];
         auto originalSize = items.size();
-        items.erase(std::remove_if(items.begin(), items.end(), [&key](const DataItem& item) {
-            return item.key == key;
-        }), items.end());
-        return items.size() != originalSize;  // 如果大小改变了，则说明至少删除了一个元素
+        std::vector<std::string> keyList = split(keys, ' ');  // 在方法内部进行拆分
+
+        items.erase(std::remove_if(items.begin(), items.end(), 
+            [&keyList](const DataItem& item) {
+                return std::find(keyList.begin(), keyList.end(), item.key) != keyList.end();
+            }), items.end());
+
+        deletedCount = originalSize - items.size();  // 计算删除了多少条目
+        return deletedCount;
     }
+
 
     // 获取数据项的值
     std::string getValue(const std::string& key, uint64_t hashKey, int groupId) {
@@ -60,6 +72,55 @@ public:
         }
         return "";  // 如果找不到，返回空字符串或可以抛出异常/错误码
     }  // 缺少这个闭合大括号
+
+    json handleRequest(const json& request) {
+        std::string keys = request["key"];
+        std::string method = request["method"];
+        uint64_t hashKey = request["hashKey"];
+        int groupId = request["groupId"];
+
+        json response;
+
+        if (method == "SET") {
+            std::string value = request.value("value", "");
+            DataItem newItem(keys, value, method, hashKey, groupId);
+            bool success = setDataItem(newItem);
+            response = {
+                {"code", success ? 1 : 0},
+                {"value", ""}
+            };
+        } else if (method == "GET") {
+            std::string foundValue = getValue(keys, hashKey, groupId);
+            response = {
+                {"code", !foundValue.empty() ? 1 : 0},
+                {"value", foundValue}
+            };
+        } else if (method == "DEL") {
+            int countDeleted = deleteDataItems(keys, hashKey, groupId);  // 直接传入字符串
+            response = {
+                {"code", countDeleted},
+                {"value", ""}
+            };
+        } else {
+            response = {
+                {"code", -1},
+                {"value", ""}
+            };
+        }
+
+        return response;
+    }
+
+    std::vector<std::string> split(const std::string& str, char delim) {
+        std::vector<std::string> tokens;
+        std::stringstream ss(str);
+        std::string token;
+        while (std::getline(ss, token, delim)) {
+            tokens.push_back(token);
+        }
+        return tokens;
+    }
+
 
     // 序列化指定组的状态
     std::string serializeGroup(int groupId) const {
@@ -94,7 +155,7 @@ public:
 
             if (readGroupId == groupId) {
                 DataItem newItem(key, value, method, hashKey, groupId);
-                addDataItem(newItem);
+                setDataItem(newItem);
             }
         }
     }

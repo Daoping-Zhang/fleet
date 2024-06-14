@@ -7,7 +7,10 @@
 #include <vector>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <nlohmann/json.hpp>
 #include <limits>  // 添加这一行以包含 <limits> 头文件
+
+using json = nlohmann::json;
 
 /**
  * @file NodeManage.h
@@ -95,6 +98,8 @@ public:
 
     std::vector<int> findGroupIdsByLeaderId(int leaderId);
 
+
+
     /**
      * 获取指定组的组长ID。
      * @param groupId 需要检索组长的组的标识符。
@@ -120,6 +125,8 @@ public:
     }
 
     
+    json serializeNetworkInfo(int leader_id) const;
+    void printNetworkInfo(int leader_id) const;
 
     void createGroupsFromIds(const std::vector<int>& m_ids);
     
@@ -210,6 +217,8 @@ void printGroups() const {
             std::cout << std::endl;
         }
     }
+
+    
 
     
 };

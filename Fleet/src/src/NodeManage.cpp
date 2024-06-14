@@ -327,3 +327,39 @@ std::vector<int> NodeManage::findGroupIdsByLeaderId(int leaderId) {
         }
         return matchingGroupIds;
     }
+
+json NodeManage::serializeNetworkInfo(int leader_id) const {
+    json response;
+    json nodeArray = json::array();  // Nodes 数组
+    json groupArray = json::array(); // Groups 数组
+
+    // 构造 nodes 部分
+    for (const auto& pair : sockaddr_to_ids) {
+        json nodeInfo;
+        nodeInfo["id"] = pair.second;
+        std::stringstream ipStream;
+        ipStream << inet_ntoa(pair.first.sin_addr) << ":" << ntohs(pair.first.sin_port);
+        nodeInfo["ip"] = ipStream.str();
+        nodeArray.push_back(nodeInfo);
+    }
+
+    // 构造 groups 部分
+    for (const auto& group : groups) {
+        json groupInfo;
+        groupInfo["id"] = group.first;
+        groupInfo["leader"] = group.second.leaderId;
+        groupInfo["nodes"] = group.second.memberIds;
+        groupArray.push_back(groupInfo);
+    }
+
+    response["nodes"] = nodeArray;
+    response["fleetLeader"] = std::to_string(leader_id);
+    response["groups"] = groupArray;
+
+    return response;
+}
+
+void NodeManage::printNetworkInfo(int leader_id) const {
+    json networkInfo = serializeNetworkInfo(leader_id);
+    std::cout << networkInfo.dump(4) << std::endl; // Pretty print with 4 spaces indentation
+}

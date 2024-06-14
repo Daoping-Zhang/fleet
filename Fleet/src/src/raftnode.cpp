@@ -52,7 +52,7 @@ Node::Node(string config_path){
 
     // 初始化节点（自己）地址
     num = node_info.size();
-    id=stoi(node_info[0][1])%10;//取port的尾数为id，这里要求集群的port是连号的
+    id=stoi(node_info[0][2]);//取port的尾数为id，这里要求集群的port是连号的
 
     cout<<id<<endl;
     cout<<id<<"start: follower"<<endl;
@@ -96,14 +96,27 @@ Node::Node(string config_path){
 
     for (int i = 0; i< num; i++)
     {
-        id=stoi(node_info[0][1])%10;
+        id=stoi(node_info[0][2]);
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
         //cout<<node_info[i][0].c_str()<<" "<<node_info[i][1].c_str()<<endl;
         inet_pton(AF_INET, node_info[i][0].c_str(), &addr.sin_addr);
         addr.sin_port = htons(std::stoi(node_info[i][1]));
-        m_node_manage.addMapping(stoi(node_info[i][1])%10, addr);
-        m_active_id_table.setActive(stoi(node_info[i][1])%10, true);
+        // 创建 socket 文件描述符
+        int fd = socket(AF_INET, SOCK_STREAM, 0);
+        
+        if (fd == -1) {
+            perror("socket creation failed");
+            return;
+        }
+
+
+
+        // 将地址和文件描述符映射存储到哈希表中
+        m_addr_fd_map[addr] = fd;
+
+        m_node_manage.addMapping(stoi(node_info[i][2]), addr);
+        m_active_id_table.setActive(stoi(node_info[i][2]), true);
     }
 
     m_ids = m_node_manage.getIdsBySockaddr(servaddr);
@@ -150,6 +163,8 @@ void Node::FollowerLoop() {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(7*delay1));
         //检验
+        
+
         if(recv_heartbeat==false)//如果一个周期结束了还没有收到心跳，那么转换为竞选者
         {
             state=CANDIDATE;
@@ -188,16 +203,16 @@ void Node::CandidateLoop() {
                     state=LEADER;
                 }//一旦票数大于一半，就变成leader
 
-
-        for(int i=0;i<num-1;i++)//向其他节点发送投票请求
+        for(sockaddr_in addr : others_addr)
         {
-            RequestVote need_vote{current_term,turn_id(id,i),log.latest_index(),log.latest_term()};
-            //竞选者当前term，id（转换过的），日志最新条目索引，日志最新条目索引的term
+            RequestVote need_vote{current_term, m_ids[0] ,log.latest_index(),log.latest_term()};
             Message message=toMessage(requestvote,&need_vote,sizeof(need_vote));//转换为通用信息格式
-		    sendmsg(send_fd[i],others_addr[i],message);//发送给其他所有节点
-            cout<<"sendmsg:"<<i<<endl;
-
+            sendmsg(m_addr_fd_map[addr], addr ,message);//发送给其他所有节点
+            
         }
+
+
+        
         //倒计时
         delay2 = distribution2(generator2);
         cout<<"delay2"<<delay1<<endl;
@@ -213,6 +228,7 @@ void Node::CandidateLoop() {
         }
         voted=false;//不是竞选者后，可为其他节点投票
     }
+
 }
 
 
@@ -244,11 +260,13 @@ void Node::LeaderLoop() {
             if (dataSize < sizeof(message.data)) {
                 std::memset(message.data + dataSize, 0, sizeof(message.data) - dataSize);
             }
-
-            for(int i = 0; i<num-1;i++)
+            for(sockaddr_in addr : others_addr)
             {
-               sendmsg(send_fd[i],others_addr[i],message);
+                
+                sendmsg(m_addr_fd_map[addr],addr,message);//发送给其他所有节点
+              
             }
+
 
             delay3 = distribution3(generator3);
             std::this_thread::sleep_for(std::chrono::milliseconds(4*delay3));
@@ -263,6 +281,18 @@ void Node::LeaderLoop() {
 
         else
         {
+
+            if(!m_active_id_table.getAllInactiveIDs().empty())
+            {
+                for (int id : m_active_id_table.getAllInactiveIDs())
+                {                    
+                    sockaddr_in addr = m_node_manage.getSockaddrById(id);
+                    if(is_fd_active(m_addr_fd_map[addr],addr))
+                    {
+                        m_active_id_table.setActive(id,true);   
+                    }
+                }
+            }
 
         
 
@@ -303,9 +333,11 @@ void Node::LeaderLoop() {
                         std::memset(message.data + dataSize, 0, sizeof(message.data) - dataSize);
                     }
 
-                    for(int i = 0; i<num-1;i++)
+                    for(sockaddr_in addr : others_addr)
                     {
-                        sendmsg(send_fd[i],others_addr[i],message);
+                            
+                        sendmsg(m_addr_fd_map[addr],addr,message);//发送给其他所有节点
+                        
                     }
 
                     m_recovery_ids.clear();
@@ -345,9 +377,9 @@ void Node::LeaderLoop() {
                         std::memset(message.data + dataSize, 0, sizeof(message.data) - dataSize);
                     }
 
-                    for(int i = 0; i<num-1;i++)
-                    {
-                        sendmsg(send_fd[i],others_addr[i],message);
+                    for(sockaddr_in addr : others_addr)
+                    {  
+                        sendmsg(m_addr_fd_map[addr],addr,message);//发送给其他所有节点       
                     }
 
                     delay3 = distribution3(generator3);
@@ -423,7 +455,8 @@ void Node::work(int fd)
                     {//投票条件：candidate的term大于等于当前term，最新的log更新（或一样），最新log的term更大（或相等）
                         VoteResponse give_vote{current_term,true};
                         Message message=toMessage(voteresponse,&give_vote,sizeof(give_vote));
-                        sendmsg(send_fd[recv_info.candidate_id],others_addr[recv_info.candidate_id],message);
+                        sockaddr_in addr =  m_node_manage.getSockaddrById(recv_info.candidate_id);
+                        sendmsg(m_addr_fd_map[addr], addr ,message);
                         voted=true;//表示已投票
                     }
                     recv_heartbeat=true;//重置倒计时
@@ -581,9 +614,9 @@ void Node::work(int fd)
                     std::memset(message.data + dataSize, 0, sizeof(message.data) - dataSize);
                 }
 
-
+                sockaddr_in addr =  m_node_manage.getSockaddrById(leader_id);
                 //cout<<"leader_id"<<leader_id<<endl;
-                sendmsg(send_fd[leader_id],m_node_manage.getSockaddrById(leader_id),message);
+                sendmsg(m_addr_fd_map[addr], addr ,message);
             }
             else if(state==LEADER)//1,如果一个leader长时间未发送心跳给follower，那么其他节点会选出新的leader，这种情况下会收到心跳信息
             {
@@ -642,7 +675,9 @@ void Node::work(int fd)
 
             int send_id = recv_info.m_id;
 
-            sendmsg(send_fd[send_id],m_node_manage.getSockaddrById(send_id),message);
+            sockaddr_in addr =  m_node_manage.getSockaddrById(send_id);
+
+            sendmsg(m_addr_fd_map[addr], addr ,message);
 
             Debug::log("发送快照");
 
@@ -667,12 +702,21 @@ void Node::work(int fd)
                 m_active_id_table.setActive(recv_info.m_id,true);
             }
 
-            m_kv.deserializeGroup(group_id, recv_info.serializedData);
+            if(recv_info.latestIndex>m_log.latest_index[group_id] || recv_info.commitIndex>m_log.committed_index[group_id])
+            {
+                m_kv.deserializeGroup(group_id, recv_info.serializedData);
 
-            m_log.latest_index[group_id] = recv_info.latestIndex;
-            m_log.committed_index[group_id] = recv_info.commitIndex;
+                m_log.latest_index[group_id] = recv_info.latestIndex;
+                m_log.committed_index[group_id] = recv_info.commitIndex;
 
-            Debug::log("恢复一组数据");
+                Debug::log("恢复一组数据");
+            }
+            else
+            {
+                Debug::log("没有需要恢复的数据");
+            }
+
+
 
         }
         else if (type == fleetGroupSendData)
@@ -746,10 +790,12 @@ void Node::work(int fd)
                 std::memcpy(message.data, serializedSend_data.c_str(), numBytesToCopy);
 
                 int send_id = m_node_manage.getLeaderIdByGroup(recv_info.group_id);
+                
+                sockaddr_in addr =  m_node_manage.getSockaddrById(send_id);
 
-                sendmsg(send_fd[send_id],m_node_manage.getSockaddrById(send_id),message);
+                sendmsg(m_addr_fd_map[addr], addr ,message);
                 std::cout<<"send_id: "<<send_id<<std::endl;
-                printAddressInfo(m_node_manage.getSockaddrById(send_id));
+                printAddressInfo(addr);
 
                       
             }
@@ -772,7 +818,7 @@ void Node::work(int fd)
             std::cout<<"groupId: "<< group_id<<endl;
 
             uint64_t latestIndex = recv_info.latestIndex;
-            uint64_t now_commitIndex = m_log.getCommittedIndex(group_id);
+            
 
             recv_info=recv_info.deserialize(receivedString);
             if(recv_info.success)
@@ -791,11 +837,11 @@ void Node::work(int fd)
 
                  // 检查是否有一半以上的节点投票
                 if (m_log.vote_count[group_id][latestIndex] > static_cast<int> (m_node_manage.getMembersByGroupId(group_id).size() / 2)
-                   && now_commitIndex < latestIndex) {
+                   ) {
                     Debug::log("开始");
 
                     mtx_append.lock();
-                    executeEntries(group_id, now_commitIndex, latestIndex , m_kv, m_log);
+                    executeEntries(group_id, m_log.getCommittedIndex(group_id), latestIndex , m_kv, m_log);
                     mtx_append.unlock();
 
                     
@@ -883,7 +929,10 @@ void Node::work(int fd)
                         goto leader_work1;//如果发现自己又变成leader了，执行leader的操作
                     }
                 }
-                sendmsg(send_fd[leader_id],others_addr[leader_id],message_recv);//知道leader id（有效的）了，可以再转发给新的leader
+
+                sockaddr_in addr =  m_node_manage.getSockaddrById(leader_id);
+                
+                sendmsg(m_addr_fd_map[addr], addr ,message_recv);//知道leader id（有效的）了，可以再转发给新的leader
                 //这里有一个巧妙的地方，新的leader会把消息返回给连接客户端的那个follwer，而不是第二或者更多次转发的follower，因为传递的message中的id号没变
             }
             else if(state==LEADER){
@@ -1152,35 +1201,13 @@ void Node::accept_connections() {
 void Node::sendmsg(int &fd,struct sockaddr_in addr,Message msg){
     lock_guard<std::mutex> lock(send_mutex_);  // 加锁
     int ret;
-    close(fd);
-        // 创建新的套接字
-        fd = socket(AF_INET, SOCK_STREAM, 0);
-        // 连接服务器
-        ret = connect(fd, (struct sockaddr*)&addr, sizeof(addr));
-        if (ret <0) { // 重新连接失败
-            // 处理连接失败的情况
-            //cout << "reconnect failed" << endl;
-            fd=-1;
-        } 
-        else { // 重新连接成功
-            // 发送消息
-            //cout<<"连接node成功"<<endl;
-            ret = sendMessage(fd,msg);
-            if (ret ==-1) { // 发送消息失败
-                // 处理发送消息失败的情况
-                cout << "close connect" << endl;
-            }
-            else
-            {
-                //cout<<"no idea"<<endl;
-            }
-        }
-        /*
+
     if(fd!=-1)
     {
         //cout<<"send"<<endl;
         ret = sendMessage(fd,msg);
         //cout<<"end"<<endl;
+
     }
     if (fd==-1||ret <0) { // 未建立连接或者发送消息失败
         // 关闭旧的套接字
@@ -1198,6 +1225,7 @@ void Node::sendmsg(int &fd,struct sockaddr_in addr,Message msg){
             // 发送消息
             //cout<<"连接node成功"<<endl;
             ret = sendMessage(fd,msg);
+            m_addr_fd_map[addr] = fd;
             if (ret ==-1) { // 发送消息失败
                 // 处理发送消息失败的情况
                 cout << "close connect" << endl;
@@ -1207,7 +1235,7 @@ void Node::sendmsg(int &fd,struct sockaddr_in addr,Message msg){
                 cout<<"no idea"<<endl;
             }
         }
-    } */
+    } 
 }
 
 
@@ -1327,7 +1355,7 @@ void Node::sendGroupLog()
                         if (sentAddresses.find(addrStr) == sentAddresses.end())
                         {
                             // 发送消息
-                            sendmsg(send_fd[id], addr, message);
+                            sendmsg(m_addr_fd_map[addr], addr, message);
 
                             std::cout<<"send_id: "<<id<<std::endl;
                             printAddressInfo(addr);
@@ -1499,3 +1527,48 @@ void Node::printAddressInfo(const sockaddr_in& addr) {
     std::cout << "发送地址：IP Address: " << ip << ", Port: " << ntohs(addr.sin_port) << std::endl;
 }
 
+bool Node::is_fd_active(int fd, sockaddr_in addr)
+{
+    if(fd<0)
+    {
+        close(fd);
+        // 创建新的套接字
+        fd = socket(AF_INET, SOCK_STREAM, 0);
+        // 连接服务器
+        int ret = connect(fd, (struct sockaddr*)&addr, sizeof(addr));
+        if(ret<0)
+        {
+            return false;
+        }else
+        {
+            m_addr_fd_map[addr] = fd;
+        }
+
+
+    }
+
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(fd, &readfds);
+
+    struct timeval tv;
+    tv.tv_sec = 0; // 设置超时时间为0，非阻塞
+    tv.tv_usec = 0;
+
+    int activity = select(fd + 1, &readfds, NULL, NULL, &tv);
+    if (activity < 0 && errno != EINTR) {
+        perror("select error");
+        return false;
+    }
+
+    if (FD_ISSET(fd, &readfds)) {
+        char buffer[1];
+        int result = recv(fd, buffer, sizeof(buffer), MSG_PEEK);
+        if (result == 0 || (result < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+            // 连接断开
+            return false;
+        }
+    }
+
+    return true;    
+}

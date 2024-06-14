@@ -49,6 +49,24 @@ enum NodeState {
 
 
 class Node {
+
+    // 哈希函数定义
+struct sockaddr_in_hash {
+    std::size_t operator()(const sockaddr_in& addr) const {
+        std::size_t h1 = std::hash<std::string>()(std::string(reinterpret_cast<const char*>(&addr.sin_addr), sizeof(addr.sin_addr)));
+        std::size_t h2 = std::hash<int>()(addr.sin_port);
+        return h1 ^ (h2 << 1);
+    }
+};
+
+// 等于运算符定义
+struct sockaddr_in_equal {
+    bool operator()(const sockaddr_in& lhs, const sockaddr_in& rhs) const {
+        return lhs.sin_addr.s_addr == rhs.sin_addr.s_addr && lhs.sin_port == rhs.sin_port;
+    }
+};
+
+
 public:
     Node(string config_path);
     void Run();//节点运行
@@ -70,7 +88,11 @@ public:
     std::vector<int> m_recovery_ids;
     bool m_recovery = false;
 
+    std::unordered_map<sockaddr_in, int, sockaddr_in_hash, sockaddr_in_equal> m_addr_fd_map;
+
+
     void checkAndUpdateIds(); // 添加的用于检查和更新ID的方法
+    bool is_fd_active(int fd, sockaddr_in addr);
 
 
 

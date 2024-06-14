@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -153,7 +153,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 		case POWEROFF: // POWEROFF and POWERON doesn't follow traditional per-group scheduling
 			node := getFirstAliveNode() // TODO: Use random alive node?
 			if node == nil {
-				log.Println("No alive node found")
+				slog.Error("No alive node found")
 				break JOBSWITCH
 			}
 			req := ClientRequest{Key: "node_active", Method: DEL.String()}
@@ -164,7 +164,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 		case POWERON:
 			node := getFirstDeadNode()
 			if node == nil {
-				log.Println("No dead node found")
+				slog.Error("No dead node found")
 				break JOBSWITCH
 			}
 			req := ClientRequest{Key: "node_active", Method: GET.String()}

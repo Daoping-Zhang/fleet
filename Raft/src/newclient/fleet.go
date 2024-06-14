@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"sync"
 )
 
@@ -104,12 +104,12 @@ func updateFleet() {
 	req := ClientRequest{Key: "fleet_info", Method: GET.String()}
 	ok, msg := JsonSendReceive(req, fleetLeader)
 	if !ok {
-		log.Println("Error getting fleet info:", msg)
+		slog.Error("Error getting fleet info: %v", msg)
 		return
 	}
 	fleetMsg := parseUpdateFleetResponse(msg)
 	if fleetMsg == nil {
-		log.Println("Error parsing fleet info")
+		slog.Error("Error parsing fleet info", msg)
 		return
 	}
 
@@ -147,7 +147,7 @@ func parseUpdateFleetResponse(resp string) *fleetUpdateMsg {
 	var fleetMsg fleetUpdateMsg
 	err := json.Unmarshal([]byte(resp), &fleetMsg)
 	if err != nil {
-		log.Println("Error unmarshalling fleet info:", err)
+		slog.Error("Error unmarshalling fleet info: %v", err)
 		return nil
 	}
 	return &fleetMsg

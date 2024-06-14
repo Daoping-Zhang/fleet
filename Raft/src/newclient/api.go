@@ -4,7 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -100,7 +100,7 @@ func setFleetLeader(w http.ResponseWriter, r *http.Request) {
 	err := json.NewDecoder(r.Body).Decode(&data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		log.Println("Error decoding request body:", err)
+		slog.Error("Error decoding request body: %v", err)
 		return
 	}
 

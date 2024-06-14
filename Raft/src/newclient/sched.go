@@ -1,6 +1,9 @@
 package main
 
-import "hash/fnv"
+import (
+	"hash/fnv"
+	"strings"
+)
 
 // Find the appropriate group to send the request
 
@@ -11,7 +14,31 @@ func hash(key string) uint64 {
 	return h.Sum64()
 }
 
-func getGroup(key string) int {
+func getHashGroup(key string) int {
 	hash := hash(key)
-	return int(hash % uint64(groupNum))
+	groupLock.RLock()
+	defer groupLock.RUnlock()
+	return int(hash % uint64(len(groups)))
+}
+
+func SchedSendReceive(operation Command, content string) (success bool, msg string) {
+	var key, value string
+	if operation == SET {
+		parts := strings.SplitN(content, " ", 2)
+		key = parts[0]
+		value = parts[1]
+	} else {
+		key = content
+	}
+	groupid := getHashGroup(key)
+	host := getGroupLeader(groupid)
+
+	req := ClientRequest{
+		Key:     key,
+		Value:   value,
+		Method:  operation.String(),
+		HashKey: hash(key),
+		GroupID: groupid,
+	}
+	return JsonSendReceive(req, host)
 }

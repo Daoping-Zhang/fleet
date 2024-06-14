@@ -4,7 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -19,7 +19,7 @@ func serve() {
 	mux.HandleFunc("/api/hosts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			getHosts(w, r)
+			getNodes(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -40,13 +40,32 @@ func serve() {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+	mux.HandleFunc("/api/run-test", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			runTest(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/task-status", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getTaskStatus(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 	http.ListenAndServe(":8080", mux)
 }
 
-func getHosts(w http.ResponseWriter, _ *http.Request) {
+func getNodes(w http.ResponseWriter, _ *http.Request) {
 	// Return the list of hosts as a JSON array
 	w.Header().Set("Content-Type", "application/json")
-	json, err := json.Marshal(Hosts)
+
+	nodeLock.RLock()
+	json, err := json.Marshal(nodes)
+	nodeLock.RUnlock()
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -59,6 +78,9 @@ func getTests(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	// the names of Tests
 	var testNames []string
+	if len(Tests) == 0 { // not loaded from file
+		readTests()
+	}
 	for _, test := range Tests {
 		testNames = append(testNames, test.Name)
 	}
@@ -78,11 +100,43 @@ func setFleetLeader(w http.ResponseWriter, r *http.Request) {
 	err := json.NewDecoder(r.Body).Decode(&data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		log.Println("Error decoding request body:", err)
+		slog.Error("Error decoding request body: %v", err)
 		return
 	}
 
-	fleetLeaderAddress = data.FleetLeaderAddress
+	// Use a temporary node instance; this will be updated later
+	groupLock.RLock()
+	fleetLeader = &Node{Address: data.FleetLeaderAddress, IsUp: true}
+	groupLock.RUnlock()
+	// Do full fleet update
+	updateFleet()
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Fleet leader address updated successfully"))
+}
+
+// GET /api/run-test?testName=<testName>
+func runTest(w http.ResponseWriter, r *http.Request) {
+	testName := r.URL.Query().Get("testName")
+	if testName == "" {
+		http.Error(w, "Missing test name", http.StatusBadRequest)
+		return
+	}
+
+	executeTest(testName)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Test executed successfully"))
+}
+
+// GET /api/task-status
+func getTaskStatus(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	TestResultLock.RLock()
+	json, err := json.Marshal(TestResult)
+	TestResultLock.RUnlock()
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Write(json)
 }

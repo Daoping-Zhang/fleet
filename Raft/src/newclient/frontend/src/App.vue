@@ -2,12 +2,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { NH1, NH2, NIcon, NSelect, NButton, NInput } from 'naive-ui'
 
-interface Host {
+interface Node {
   Address: string;
-  IsFleetLeader: boolean;
-  IsRaftLeader: boolean;
-  GroupID: number;
-  LogicalID: number;
   IsUp: boolean;
 }
 
@@ -17,29 +13,30 @@ interface Metrics {
   otherData: string;
 }
 
+interface TestResult {
+  totalBytes: number;
+  successJobs: number;
+  completeJobs: number;
+  totalJobs: number;
+  completed: boolean;
+}
+
+
 // Define the nodes array using ref
-const nodes = ref<Host[]>([
+const nodes = ref<Node[]>([
   {
     Address: '192.168.1.1:1234',
-    IsFleetLeader: true,
-    IsRaftLeader: false,
-    GroupID: 1,
-    LogicalID: 1,
     IsUp: true,
   },
   {
     Address: '192.168.1.2:2432',
-    IsFleetLeader: false,
-    IsRaftLeader: true,
-    GroupID: 1,
-    LogicalID: 2,
     IsUp: false,
   },
   // Add more nodes as needed
 ]);
 
 // Define the method to get the node color
-const getNodeColor = (node: Host): string => {
+const getNodeColor = (node: Node): string => {
   return node.IsUp ? 'green' : 'red';
 };
 
@@ -59,13 +56,8 @@ const algorithms = ref([
 const selectedTestCase = ref<string | null>(null);
 const selectedAlgorithm = ref<string | null>(null);
 const fleetLeaderAddress = ref<string | null>(null);
-
-// Define the method to run the test case
-const runTestCase = () => {
-  console.log('Selected Test Case:', selectedTestCase.value);
-  console.log('Selected Algorithm:', selectedAlgorithm.value);
-  // Implement the logic to run the test case
-};
+const nodeFetched = ref<boolean>(false);
+const secondElapsed = ref<number>(0);
 
 // Define the metrics
 const metrics = ref<Metrics>({
@@ -74,12 +66,23 @@ const metrics = ref<Metrics>({
   otherData: ''
 });
 
+const testResult = ref<TestResult>({
+  totalBytes: 50000,
+  successJobs: 240,
+  completeJobs: 250,
+  totalJobs: 300,
+  completed: false,
+});
+
 // Function to fetch nodes status from the API
 const fetchNodeStatus = async () => {
+  if (!nodeFetched.value) {
+    return; // No need to fetch when fleet leader is not set!
+  }
   try {
     const response = await fetch('/api/hosts');
     if (response.ok) {
-      const data: Host[] = await response.json();
+      const data: Node[] = await response.json();
       nodes.value = data;
     } else {
       console.error('Failed to fetch node status:', response.statusText);
@@ -121,11 +124,54 @@ const setFleetLeaderAddress = async () => {
     }
 
     console.log('Fleet leader address set successfully');
+    nodeFetched.value = true;
   } catch (error) {
     console.error('Error setting fleet leader address:', error);
   }
 
   console.log('Setting fleet leader address', fleetLeaderAddress);
+};
+
+// Define the method to run the test case
+const runTestCase = async () => {
+  console.log('Selected Test Case:', selectedTestCase.value);
+  console.log('Selected Algorithm:', selectedAlgorithm.value);
+
+
+  // GET /api/run-test?testName=<testname>
+  // Don't care about the return value
+  try {
+    const response = await fetch(`/api/run-test?testName=${selectedTestCase.value}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    console.log('Test case started successfully');
+  } catch (error) {
+    console.error('Error running test case:', error);
+  }
+  const startTime = Date.now();
+  secondElapsed.value = 0;
+
+  // After this, run GET /api/task-status every 1s before completed=true
+  // Return format: {"totalBytes":0,"successJobs":0,"completeJobs":0,"totalJobs":0,"completed":false}
+  const intervalId = setInterval(async () => {
+    try {
+      const response = await fetch('/api/task-status');
+      if (response.ok) {
+        const data: TestResult = await response.json();
+        testResult.value = data;
+        secondElapsed.value = (Date.now() - startTime) / 1000;
+        if (data.completed) {
+          clearInterval(intervalId);
+          console.log('Test case completed:', data);
+        }
+      } else {
+        console.error('Failed to fetch task status:', response.statusText);
+      }
+    } catch (error) {
+      console.error('Error fetching task status:', error);
+    }
+  }, 1000);
 };
 
 // Set up interval to fetch node status every 2 seconds
@@ -150,7 +196,7 @@ onMounted(() => {
       </div>
       <n-h2 prefix="bar">Node Status</n-h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        <div v-for="node in nodes" :key="node.LogicalID" class="flex items-center p-2 border rounded shadow">
+        <div v-for="node in nodes" :key="node.Address" class="flex items-center p-2 border rounded shadow">
           <n-icon :color="getNodeColor(node)" size="24">
             <template v-slot:default>
               <svg viewBox="0 0 24 24" class="w-6 h-6">
@@ -175,16 +221,16 @@ onMounted(() => {
         <h3 class="text-xl font-semibold mb-4">Performance Metrics</h3>
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           <div class="p-2 border rounded">
-            <h4 class="text-lg font-medium">Completion Time</h4>
-            <p>{{ metrics.completionTime }} seconds</p>
+            <h4 class="text-lg font-medium">Jobs Completed</h4>
+            <p>{{ testResult.completeJobs }}/{{ testResult.totalJobs }}</p>
+          </div>
+          <div class="p-2 border rounded">
+            <h4 class="text-lg font-medium">Success Rate</h4>
+            <p>{{ testResult.successJobs / testResult.completeJobs }}</p>
           </div>
           <div class="p-2 border rounded">
             <h4 class="text-lg font-medium">Throughput</h4>
-            <p>{{ metrics.throughput }} ops/sec</p>
-          </div>
-          <div class="p-2 border rounded">
-            <h4 class="text-lg font-medium">Other Data</h4>
-            <p>{{ metrics.otherData }}</p>
+            <p>{{ testResult.completeJobs / secondElapsed }} ops/sec</p>
           </div>
         </div>
       </div>

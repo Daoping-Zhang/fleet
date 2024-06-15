@@ -598,7 +598,7 @@ void Node::work(int fd)
             uint64_t commitIndex = m_log.getCommittedIndex(recv_info.group_id);
             uint64_t latestIndex = m_log.getLatestIndex(recv_info.group_id);
 
-            std::string serializeGroupData = m_kv.serializeGroup(group_id);
+            std::string serializeGroupData = m_log.serializeGroupLogs(group_id);
 
             InitializeData send_data(m_ids[0], group_id, latestIndex, commitIndex, serializeGroupData);
             
@@ -642,11 +642,26 @@ void Node::work(int fd)
 
             if(recv_info.latestIndex>m_log.latest_index[group_id] || recv_info.commitIndex>m_log.committed_index[group_id])
             {
-                m_kv.deserializeGroup(group_id, recv_info.serializedData);
 
-                m_log.latest_index[group_id] = recv_info.latestIndex;
-                m_log.committed_index[group_id] = recv_info.commitIndex;
+                //uint64_t pre_commitIndex = m_log.getCommittedIndex(group_id);
+                
+                m_log.deserializeGroupLogs(group_id, recv_info.serializedData);
 
+                executeEntries(recv_info.group_id, 0, m_log.getCommittedIndex(group_id), m_kv, m_log);
+
+                json message;
+                message["type"] = "sucessInit";
+                message["latestIndex"] =  m_log.getLatestIndex(group_id);
+                message["m_ids"] = json::array(); // 明确声明为 JSON 数组
+                for (const int& id : m_ids)
+                {
+                    message["m_ids"].push_back(id);
+                }
+                message["group_id"] = group_id;
+
+                sockaddr_in addr =  m_node_manage.getSockaddrById(recv_info.m_id);
+
+                sendmsg(m_addr_fd_map[addr], addr ,message);
                
 
 
@@ -659,6 +674,35 @@ void Node::work(int fd)
 
 
 
+        }
+        else if (message_recv["type"] == "sucessInit")
+        {
+            Debug::log("收到成功初始化消息");
+            int group_id = message_recv["group_id"];
+            uint64_t latestIndex = message_recv["latestIndex"];
+            for (int id : message_recv["m_ids"])
+            {
+                mtx_append.lock();
+                m_log.addVote(group_id,latestIndex,id);
+                mtx_append.unlock();
+            }
+
+            if (m_log.getCommittedIndex(group_id)<latestIndex && m_log.vote_count[group_id][latestIndex] > static_cast<int> (m_node_manage.getMembersByGroupId(group_id).size() / 2)) {
+                    Debug::log("开始处理");
+
+                    mtx_append.lock();
+                    if (m_log.getCommittedIndex(group_id) < latestIndex)
+                     {
+
+                        executeEntries(group_id, m_log.getCommittedIndex(group_id), latestIndex, m_kv, m_log);    
+                        m_log.commit(group_id, latestIndex);
+                        Debug::log("成功提交");
+                        
+                    }
+                    mtx_append.unlock();                                                                                       
+                    Debug::log("成功提交");                   
+                    m_log.commit(group_id, latestIndex);
+                }
         }
         else if (message_recv["type"] == "fleetGroupSendData")
         {
@@ -675,7 +719,7 @@ void Node::work(int fd)
             {
                 Debug::log("同步提交");
 
-                executeEntries(recv_info.group_id, commitIndex, recv_info.commitIndex, m_kv, m_log);
+                executeEntries(recv_info.group_id, commitIndex, std::min(recv_info.commitIndex, latestIndex), m_kv, m_log);
             }
 
             if(latestIndex <= recv_info.latestIndex)
@@ -776,6 +820,7 @@ void Node::work(int fd)
                     mtx_append.lock();
                     if (m_log.getCommittedIndex(group_id) < latestIndex)
                      {
+                        executeEntries(group_id, m_log.getCommittedIndex(group_id), latestIndex, m_kv, m_log);
 
                         m_log.commit(group_id, latestIndex);
                         Debug::log("成功提交");
@@ -857,6 +902,7 @@ void Node::work(int fd)
 
             mtx_append.lock();
             uint64_t commitIndex = m_log.getCommittedIndex(groupId);
+            uint64_t pre_latestIndex;
             uint64_t latestIndex = m_log.getLatestIndex(groupId);  
             mtx_append.unlock();
 
@@ -886,6 +932,17 @@ void Node::work(int fd)
                 else
                 {
                     Debug::log("处理GET请求");
+                    while(m_log.getCommittedIndex(groupId) < latestIndex)
+                        {
+
+                        }
+                    response = m_kv.handleRequest(receiveJson);
+                    Debug::log("成功提交并响应客户端");
+                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+                    return;
+                                        
+                    
                 }
                
             }
@@ -901,10 +958,14 @@ void Node::work(int fd)
                 std::cout<<commitIndex<<std::endl;
                 std::cout<<latestIndex<<std::endl;        
                 mtx_append.lock();
+
+                pre_latestIndex = m_log.getLatestIndex(groupId); 
                 m_log.append(groupId, entry);
-                mtx_append.unlock();
-                commitIndex = m_log.getCommittedIndex(groupId);
                 latestIndex = m_log.getLatestIndex(groupId);  
+
+                mtx_append.unlock();
+     
+                
                 
             }
             else if(method == "DEL")
@@ -921,13 +982,15 @@ void Node::work(int fd)
                     Debug::log("处理DEL操作");
                     LogEntry entry(key, value, method, hashKey, m_node_manage.commit_num);
 
-                    std::cout<<commitIndex<<std::endl;
-                    std::cout<<latestIndex<<std::endl;        
+      
                     mtx_append.lock();
+
+                    pre_latestIndex = m_log.getLatestIndex(groupId); 
                     m_log.append(groupId, entry);
+                    latestIndex = m_log.getLatestIndex(groupId);  
+                    
                     mtx_append.unlock();
-                    commitIndex = m_log.getCommittedIndex(groupId);
-                    latestIndex = m_log.getLatestIndex(groupId);                      
+                       
                 }
             }
 
@@ -935,7 +998,7 @@ void Node::work(int fd)
                 {
 
                 }
-            response = m_kv.handleRequest(receiveJson);
+            response = m_kv.response[pre_latestIndex];
             Debug::log("成功提交并响应客户端");
             string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
             send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
@@ -1144,34 +1207,48 @@ void Node::rebindInactiveIds(NodeManage& nodeManage, ActiveIDTable& activeTable)
 
 void Node::executeEntries(int groupId, uint64_t now_commitIndex, uint64_t latestIndex, FleetKVStore& kv, FleetLog& log)
 {
-     // 确保我们不会试图处理不存在的日志条目
+    // 确保我们不会试图处理不存在的日志条目
     if (now_commitIndex >= latestIndex) {
         std::cout << "没有新的提交需要处理。" << std::endl;
         return;
     }
 
+      // 创建一个 JSON 数组来存储每个请求的响应
+
     // 遍历所有未提交但已确认的日志条目
-    for (uint64_t index = now_commitIndex ; index < latestIndex; ++index) {
+    for (uint64_t index = now_commitIndex; index < latestIndex; ++index) {
         const auto& entry = log.logs[groupId][index];
 
-        // 创建DataItem实例
+        // 调试输出：打印每个日志条目的内容
+        std::cout << "Processing log entry at index " << index << std::endl;
+        std::cout << "Entry key: " << entry.key << ", value: " << entry.value
+                  << ", method: " << entry.method << ", hashKey: " << entry.hashKey
+                  << ", term: " << entry.term << std::endl;
+
+        // 创建 DataItem 实例
         DataItem item(entry.key, entry.value, entry.method, entry.hashKey, groupId);
 
+        json request;
+        request["key"] = entry.key;
+        request["method"] = entry.method;
+        request["hashKey"] = entry.hashKey;
+        request["groupId"] = groupId;
+
         if (entry.method == "SET") {
-            // 如果是SET操作，添加或更新键值对
-            if (kv.setDataItem(item)) {
-                std::cout << "Key: " << entry.key << " set with value: " << entry.value << std::endl;
-            } else {
-                std::cout << "Failed to set key: " << entry.key << std::endl;
-            }
-        } else if (entry.method == "DEL") {
-            // 如果是DEL操作，删除键值对
-            if (kv.deleteDataItems(entry.key, entry.hashKey, groupId)) {
-                std::cout << "Key: " << entry.key << " deleted." << std::endl;
-            } else {
-                std::cout << "Failed to delete key: " << entry.key << std::endl;
-            }
+            // 如果是 SET 操作，添加或更新键值对
+            request["value"] = entry.value;
         }
+
+        // 调试输出：打印 request 的内容
+        std::cout << "Request: " << request.dump(4) << std::endl;
+
+        // 调用 handleRequest 并将返回的 JSON 存储在 response 数组中
+        json result = kv.handleRequest(request);
+
+        // 调试输出：打印 result 的内容
+        std::cout << "Result: " << result.dump(4) << std::endl;
+
+        kv.response.push_back(result);
     }
 
     // 更新提交索引
@@ -1194,16 +1271,10 @@ void Node::sendGroupLog()
             {
                 // 获取未提交的日志条目
                 Debug::log("开始处理日志提交");
-                std::vector<LogEntry> uncommittedEntries = m_log.getUncommittedEntries(groupId);
+                
 
                 // 序列化所有未提交的日志条目
-                std::string serializedEntries = m_log.serializeLogEntries(uncommittedEntries);
-                send_data.entriesSerialized = serializedEntries;
-                std::string serializedSend_data = send_data.serialize();
 
-                json message;
-                message["type"] = "fleetGroupSendData";
-                message["data"] = serializedSend_data;
                 
 
                 std::unordered_set<std::string> sentAddresses;
@@ -1219,6 +1290,15 @@ void Node::sendGroupLog()
                     }
                     else
                     {
+                        std::vector<LogEntry> uncommittedEntries = m_log.getUncommittedEntries(groupId, id);
+                        std::string serializedEntries = m_log.serializeLogEntries(uncommittedEntries);
+                        send_data.entriesSerialized = serializedEntries;
+                        std::string serializedSend_data = send_data.serialize();
+
+                        json message;
+                        message["type"] = "fleetGroupSendData";
+                        message["data"] = serializedSend_data;                        
+
                         sockaddr_in addr = m_node_manage.getSockaddrById(id);
 
                         // 将 sockaddr_in 转换为字符串以便存储在 unordered_set 中

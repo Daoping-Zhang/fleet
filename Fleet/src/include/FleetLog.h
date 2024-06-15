@@ -43,13 +43,23 @@ public:
         return committed_index[groupId];
     }
 
-    std::vector<LogEntry> getUncommittedEntries(int groupId) {
+    std::vector<LogEntry> getUncommittedEntries(int groupId, int nodeId) {
         std::vector<LogEntry> uncommittedEntries;
-        uint64_t commitIndex = committed_index[groupId];
+
+        // 获取该节点的最新日志索引
+        uint64_t nodeLatestIndex = 0;
+        if (latest_indexes_by_node[groupId].find(nodeId) != latest_indexes_by_node[groupId].end()) {
+            nodeLatestIndex = latest_indexes_by_node[groupId][nodeId].begin()->second;
+        }
+
+        // 获取最新提交的索引和最新的日志索引
         uint64_t latestIndex = latest_index[groupId];
 
-        for (uint64_t i = commitIndex; i < latestIndex; ++i) {
-            uncommittedEntries.push_back(logs[groupId][i]);
+        // 从节点的最新索引到最新的日志索引之间的所有条目都是未提交的条目
+        for (uint64_t i = nodeLatestIndex ; i < latestIndex; ++i) {
+            if (i < logs[groupId].size()) {
+                uncommittedEntries.push_back(logs[groupId][i]);
+            }
         }
 
         return uncommittedEntries;
@@ -108,4 +118,59 @@ public:
 
         return entriesToSend;
     }
+std::string serializeGroupLogs(int groupId) {
+    json j;
+    j["logs"] = json::array();
+
+    if (logs.find(groupId) != logs.end()) {
+        for (const auto& entry : logs[groupId]) {
+            j["logs"].push_back({
+                {"key", entry.key},
+                {"value", entry.value},
+                {"method", entry.method},
+                {"hashKey", entry.hashKey},
+                {"term", entry.term}
+            });
+        }
+    }
+
+    j["latest_index"] = latest_index[groupId];
+    j["committed_index"] = committed_index[groupId];
+    j["vote_count"] = vote_count[groupId];
+
+    return j.dump();
+}
+
+void deserializeGroupLogs(int groupId, const std::string& data) {
+    try {
+        json j = json::parse(data);
+
+        logs[groupId].clear();
+        for (const auto& item : j["logs"]) {
+            if (!item.is_object()) {
+                throw std::runtime_error("Log entry is not an object.");
+            }
+            logs[groupId].emplace_back(
+                item["key"].get<std::string>(),
+                item["value"].get<std::string>(),
+                item["method"].get<std::string>(),
+                item["hashKey"].get<uint64_t>(),
+                item["term"].get<int>()
+            );
+        }
+
+        latest_index[groupId] = j["latest_index"].get<uint64_t>();
+        committed_index[groupId] = j["committed_index"].get<uint64_t>();
+
+        vote_count[groupId].clear();
+        for (const auto& vote : j["vote_count"].items()) {
+            vote_count[groupId][std::stoull(vote.key())] = vote.value().get<int>();
+        }
+    } catch (const json::exception& e) {
+        std::cerr << "JSON parse error: " << e.what() << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Error deserializing group logs: " << e.what() << std::endl;
+    }
+}
+
 };

@@ -21,6 +21,7 @@ class FleetKVStore {
 public:
     // 使用双层unordered_map，第一层按组ID，第二层按hashKey分类
     std::unordered_map<int, std::unordered_map<uint64_t, std::vector<DataItem>>> database;
+    json response = json::array();
 
 
 
@@ -53,6 +54,7 @@ public:
             }), items.end());
 
         deletedCount = originalSize - items.size();  // 计算删除了多少条目
+    
         return deletedCount;
     }
 

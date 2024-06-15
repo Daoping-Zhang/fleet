@@ -111,6 +111,8 @@ NodeManage NodeManage::deserialize(const std::string& s) {
             inet_aton(ip.c_str(), &addr.sin_addr);
 
             nodeManage.sockaddr_to_ids[addr].push_back(id); // 假设每个地址可能有多个ID
+                    // 添加到 id_to_sockaddr
+             nodeManage.id_to_sockaddr[id] = addr;
         }
 
         // 解析 groups

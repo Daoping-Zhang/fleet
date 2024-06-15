@@ -542,8 +542,8 @@ void Node::work(int fd)
                 if(recv_info.term>current_term)current_term=recv_info.term;//如果比leader的term小，那么更新为leader的term
                 res.term=current_term;//返回自己的term（可能比leader的大）
                 res.follower_commit=log.committed_index();
-                if(recv_info.leader_commit>log.committed_index())
-                    {leader_id=recv_info.leader_id;}//更新leader的id
+
+                leader_id=recv_info.leader_id;//更新leader的id
                 
                 res.success = true;
                 
@@ -557,6 +557,7 @@ void Node::work(int fd)
 
                 sockaddr_in addr =  m_node_manage.getSockaddrById(leader_id);
                 //cout<<"leader_id"<<leader_id<<endl;
+                
                 sendmsg(m_addr_fd_map[addr], addr ,message);
             }
             else if(state==LEADER)//1,如果一个leader长时间未发送心跳给follower，那么其他节点会选出新的leader，这种情况下会收到心跳信息
@@ -761,16 +762,16 @@ void Node::work(int fd)
                     mtx_append.lock();
                     m_log.addVote(group_id,latestIndex,id);
                     mtx_append.unlock();
-                    Debug::log("投票+1");
+                   // Debug::log("投票+1");
                     
-                    std::cout<<"group_id"<<group_id<<std::endl;
+                    //std::cout<<"group_id"<<group_id<<std::endl;
                     
                 }
 
                  // 检查是否有一半以上的节点投票
                 if (m_log.vote_count[group_id][latestIndex] > static_cast<int> (m_node_manage.getMembersByGroupId(group_id).size() / 2)
                    ) {
-                    Debug::log("开始");
+                    Debug::log("开始处理");
 
                     mtx_append.lock();
                     if (m_log.getCommittedIndex(group_id) < latestIndex)
@@ -1103,7 +1104,7 @@ void Node::sendmsg(int &fd,struct sockaddr_in addr,json msg){
             m_addr_fd_map[addr] = fd;
             if (ret ==-1) { // 发送消息失败
                 // 处理发送消息失败的情况
-                cout << "close connect" << endl;
+               cout << "close connect" << endl;
             }
             else
             {
@@ -1303,8 +1304,9 @@ void Node::initializeNewId(int newId, bool init) {
 
             if(newId != leader_id)
             {
+                sockaddr_in addr = m_node_manage.getSockaddrById(leader_id);
                 
-                sendmsg(send_fd[leader_id],m_node_manage.getSockaddrById(leader_id),message);
+                sendmsg(m_addr_fd_map[addr],addr,message);
 
             }
 
@@ -1315,7 +1317,8 @@ void Node::initializeNewId(int newId, bool init) {
                 {
                     if(newId != id)
                     {
-                        sendmsg(send_fd[ids[1]],m_node_manage.getSockaddrById(ids[1]),message);
+                        sockaddr_in addr = m_node_manage.getSockaddrById(ids[1]);
+                        sendmsg(m_addr_fd_map[addr],addr,message);
                         break;
                     }
                     
@@ -1347,7 +1350,7 @@ void Node::checkAndUpdateIds() {
 }
 
 void Node::sendHeartBeat()
-{                   Debug::log("发送心跳");
+{                   
                     for(int i=0;i<num-1;i++)
                     {
                         AppendEntries heartbeat;
@@ -1367,25 +1370,16 @@ void Node::sendHeartBeat()
                         heartbeat.prev_log_index=match_index[i];//leader最近一条复制到follower（i)的条目的索引
                         heartbeat.prev_log_term=log.term_at(match_index[i]);//leader最近一条复制到follower（i)条目的周期
                         mtx_match.unlock();
-                        for(int j=1;j<=3;j++){
-                            if(match_index[i]+j<=log.latest_index()){//同步的entry
-                                strncpy(heartbeat.entries[j-1],log.entry_at(match_index[i]+j).c_str(), sizeof(heartbeat.entries[j-1]));//要复制给follower（i）的条目的index
-                                //heartbeat.entries[j][sizeof(heartbeat.entries[j]) - 1] = '\0';
-                                heartbeat.entries_term[j-1]=log.term_at(match_index[i]+j);//要复制给follower（i）的条目的term
-                            }
-                            else{//如果复制给follower（i）的条目已经是leader的最新条目了，则用F标识（如果三条entry都是F，则是纯粹的心跳信息）
-                                heartbeat.entries[j-1][0]='F';
-                                heartbeat.entries_term[j-1]=0;
-                            }
-                        }
+                    
                         json message;
                         message["type"] ="appendentries";
 
                         message["data"] = serializeAppendEntries(heartbeat);
                                     
 
-                        sendmsg(send_fd[i],others_addr[i],message);
-                        printAddressInfo(others_addr[i]);
+                        sendmsg(m_addr_fd_map[others_addr[i]],others_addr[i],message);
+                        //printAddressInfo(others_addr[i]);
+
                     }     
 }
 

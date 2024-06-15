@@ -79,16 +79,16 @@ int sendMessage(int sockfd, json message) {
     if (ret < 0) {
         if (errno == EPIPE || errno == ECONNRESET) {
             // 对方已经关闭了连接
-            std::cerr << "Connection closed by peer: " << strerror(errno) << std::endl;
+            //std::cerr << "Connection closed by peer: " << strerror(errno) << std::endl;
             return -1;
         } else {
             // 发生了其他错误
             perror("send");
-            std::cerr << "Send error: " << strerror(errno) << std::endl;
+            //std::cerr << "Send error: " << strerror(errno) << std::endl;
             return -2;
         }
     }
-    std::cout << "sendMessage: Message sent successfully" << std::endl;
+    //std::cout << "sendMessage: Message sent successfully" << std::endl;
     return 1;
 }
 

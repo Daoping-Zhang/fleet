@@ -65,6 +65,7 @@
         "typeinfo": "cpp",
         "valarray": "cpp",
         "unordered_set": "cpp",
-        "__nullptr": "cpp"
+        "__nullptr": "cpp",
+        "filesystem": "cpp"
     }
 }

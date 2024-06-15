@@ -353,7 +353,7 @@ json NodeManage::serializeNetworkInfo(int leader_id) const {
     }
 
     response["nodes"] = nodeArray;
-    response["fleetLeader"] = std::to_string(leader_id);
+    response["fleetLeader"] = leader_id;
     response["groups"] = groupArray;
 
     return response;

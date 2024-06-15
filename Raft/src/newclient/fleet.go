@@ -104,12 +104,12 @@ func updateFleet() {
 	req := ClientRequest{Key: "fleet_info", Method: GET.String()}
 	ok, msg := JsonSendReceive(req, fleetLeader)
 	if !ok {
-		slog.Error("Error getting fleet info: %v", msg)
+		slog.Error("Error getting fleet info", "msg", msg)
 		return
 	}
 	fleetMsg := parseUpdateFleetResponse(msg)
 	if fleetMsg == nil {
-		slog.Error("Error parsing fleet info", msg)
+		slog.Error("Error parsing fleet info", "msg", msg)
 		return
 	}
 
@@ -147,7 +147,7 @@ func parseUpdateFleetResponse(resp string) *fleetUpdateMsg {
 	var fleetMsg fleetUpdateMsg
 	err := json.Unmarshal([]byte(resp), &fleetMsg)
 	if err != nil {
-		slog.Error("Error unmarshalling fleet info: %v", err)
+		slog.Error("Error unmarshalling fleet info", "msg", err)
 		return nil
 	}
 	return &fleetMsg

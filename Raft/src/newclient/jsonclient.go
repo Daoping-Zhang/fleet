@@ -26,12 +26,12 @@ type ClientResponse struct {
 func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 	addr, err := net.ResolveTCPAddr("tcp", host.Address)
 	if err != nil {
-		slog.Error("Error resolving address: %v", err)
+		slog.Error("Error resolving address", "err", err)
 		return false, err.Error()
 	}
 	conn, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
-		slog.Error("Error connecting to server: %v", err)
+		slog.Error("Error connecting to server", "err", err)
 		return false, err.Error()
 	}
 	defer conn.Close()
@@ -39,12 +39,12 @@ func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 	// Send the request
 	reqString, err := json.Marshal(req)
 	if err != nil {
-		slog.Error("Error marshalling request: %v", err)
+		slog.Error("Error marshalling request", "err", err)
 		return false, err.Error()
 	}
 	_, err = conn.Write(reqString)
 	if err != nil {
-		slog.Error("Error sending message: %v", err)
+		slog.Error("Error sending message", "err", err)
 		return false, err.Error()
 	}
 
@@ -53,7 +53,7 @@ func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 	var resp ClientResponse
 	err = respReader.Decode(&resp)
 	if err != nil {
-		slog.Error("Error receiving response: %v", err)
+		slog.Error("Error receiving response","err", err)
 		return false, err.Error()
 	}
 

@@ -56,6 +56,7 @@ func serve() {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+	slog.Info("Serving at 8080")
 	http.ListenAndServe(":8080", mux)
 }
 
@@ -70,6 +71,7 @@ func getNodes(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+	slog.Info("Get nodes", "nodes", json)
 	w.Write(json)
 }
 
@@ -89,9 +91,11 @@ func getTests(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+	slog.Info("Get tests", "test names", json)
 	w.Write(json)
 }
 
+// This only sets fleet leader info of client, so as to get further information
 func setFleetLeader(w http.ResponseWriter, r *http.Request) {
 	var data struct {
 		FleetLeaderAddress string `json:"fleetLeaderAddress"`
@@ -100,9 +104,10 @@ func setFleetLeader(w http.ResponseWriter, r *http.Request) {
 	err := json.NewDecoder(r.Body).Decode(&data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		slog.Error("Error decoding request body: %v", err)
+		slog.Error("Error decoding request body", "err", err)
 		return
 	}
+	slog.Info("Set fleet leader", "address", data.FleetLeaderAddress)
 
 	// Use a temporary node instance; this will be updated later
 	groupLock.RLock()
@@ -138,5 +143,6 @@ func getTaskStatus(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+	slog.Info("Task status", "status", json)
 	w.Write(json)
 }

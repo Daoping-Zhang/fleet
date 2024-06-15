@@ -5,12 +5,12 @@
             {
                 "time": 1000,
                 "action":"set",
-                "repeat": 1000
+                "repeat": 1
             },
             {
                 "time": 1000,
                 "action":"get",
-                "repeat": 123
+                "repeat": 1
             }
         ]
     }

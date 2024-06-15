@@ -52,11 +52,11 @@ Node::Node(string config_path){
 
     // 初始化节点（自己）地址
     num = node_info.size();
-    id=stoi(node_info[0][2]);//取port的尾数为id，这里要求集群的port是连号的
+    id=stoi(node_info[0][2]);
 
     cout<<id<<endl;
     cout<<id<<"start: follower"<<endl;
-    send_fd.resize(num-1,-1);//初始化用于send 信息给其他节点的socket
+    
    
     //初始化监听fd
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -205,8 +205,13 @@ void Node::CandidateLoop() {
 
         for(sockaddr_in addr : others_addr)
         {
+            
             RequestVote need_vote{current_term, m_ids[0] ,log.latest_index(),log.latest_term()};
-            Message message=toMessage(requestvote,&need_vote,sizeof(need_vote));//转换为通用信息格式
+            
+            json message;
+            message["type"] = "requestvote";
+            message["data"] = serializeRequestVote(need_vote);
+
             sendmsg(m_addr_fd_map[addr], addr ,message);//发送给其他所有节点
             
         }
@@ -246,20 +251,11 @@ void Node::LeaderLoop() {
 
             m_leader_commit = 1;
             m_node_manage.commit_num = m_leader_commit;
-            Message message;
-            message.type = fleetControl;
-            std::vector<char> serializedData = m_node_manage.serialize(true);
-    
-            // 确保不超出 data 数组的大小
-            size_t dataSize = std::min(serializedData.size(), sizeof(message.data));
-
-            // 使用 memcpy 将数据从 vector 复制到数组
-            std::memcpy(message.data, serializedData.data(), dataSize);
-            
-            // 如果 serializedData 大小小于 message.data，可以考虑清零剩余部分
-            if (dataSize < sizeof(message.data)) {
-                std::memset(message.data + dataSize, 0, sizeof(message.data) - dataSize);
-            }
+            json message;
+            message["type"] = "fleetControl";
+            std::string serializedData = m_node_manage.serialize();
+            message["data"] = serializedData;
+ 
             for(sockaddr_in addr : others_addr)
             {
                 
@@ -318,20 +314,10 @@ void Node::LeaderLoop() {
 
                     checkAndUpdateIds();
 
-                    Message message;
-                    message.type = fleetControl;
-                    std::vector<char> serializedData = m_node_manage.serialize(true);
-            
-                    // 确保不超出 data 数组的大小
-                    size_t dataSize = std::min(serializedData.size(), sizeof(message.data));
-
-                    // 使用 memcpy 将数据从 vector 复制到数组
-                    std::memcpy(message.data, serializedData.data(), dataSize);
-                    
-                    // 如果 serializedData 大小小于 message.data，可以考虑清零剩余部分
-                    if (dataSize < sizeof(message.data)) {
-                        std::memset(message.data + dataSize, 0, sizeof(message.data) - dataSize);
-                    }
+                    json message;
+                    message["type"] = "fleetControl";
+                    std::string serializedData = m_node_manage.serialize();
+                    message["data"] = serializedData;
 
                     for(sockaddr_in addr : others_addr)
                     {
@@ -362,20 +348,10 @@ void Node::LeaderLoop() {
                     
                     checkAndUpdateIds();
 
-                    Message message;
-                    message.type = fleetControl;
-                    std::vector<char> serializedData = m_node_manage.serialize(true);
-            
-                    // 确保不超出 data 数组的大小
-                    size_t dataSize = std::min(serializedData.size(), sizeof(message.data));
-
-                    // 使用 memcpy 将数据从 vector 复制到数组
-                    std::memcpy(message.data, serializedData.data(), dataSize);
-                    
-                    // 如果 serializedData 大小小于 message.data，可以考虑清零剩余部分
-                    if (dataSize < sizeof(message.data)) {
-                        std::memset(message.data + dataSize, 0, sizeof(message.data) - dataSize);
-                    }
+                    json message;
+                    message["type"] = "fleetControl";
+                    std::string serializedData = m_node_manage.serialize();
+                    message["data"] = serializedData;
 
                     for(sockaddr_in addr : others_addr)
                     {  
@@ -436,25 +412,33 @@ void Node::LeaderLoop() {
 //根据收到的信息进行对应的处理
 void Node::work(int fd)
 {
-    Message message_recv{};//收到的message
+    json message_recv;//收到的message
     //cout<<"size: "<<recv_fd.size()<<endl;
     int ret=recvMessage(fd, message_recv);
     
-    MessageType type=message_recv.type;//节点根据message的type来进行对应的处理
+    if(ret<=0)
+    {
+        return;
+    }
 
-    if(ret!=-1){
-        if(type==requestvote){//请求投票类型，candidtae->follwer
+
+    if(message_recv.find("type") != message_recv.end()){
+        if(message_recv["type"]=="requestvote"){//请求投票类型，candidtae->follwer
             if(state==FOLLOWER)
             {
                 if(voted==false&&recv_heartbeat==false)//还没有投票的话,而且当前集群无leader
                 {       
                     RequestVote recv_info;
-                    recv_info=getRequestVote(message_recv);
+                    
+                    
+                    recv_info = deserializeRequestVote(message_recv["data"]);
                     if(recv_info.term>current_term)current_term=recv_info.term;//更新为candidate的term（更大的）
                     if((recv_info.term>=current_term)&&(recv_info.last_log_index>=log.latest_index())&&(recv_info.last_log_term>=log.latest_term()))
                     {//投票条件：candidate的term大于等于当前term，最新的log更新（或一样），最新log的term更大（或相等）
                         VoteResponse give_vote{current_term,true};
-                        Message message=toMessage(voteresponse,&give_vote,sizeof(give_vote));
+                        json message;
+                        message["type"] = "voteresponse";
+                        message["data"] = serializeVoteResponse(give_vote);
                         sockaddr_in addr =  m_node_manage.getSockaddrById(recv_info.candidate_id);
                         sendmsg(m_addr_fd_map[addr], addr ,message);
                         voted=true;//表示已投票
@@ -463,13 +447,13 @@ void Node::work(int fd)
                 }
             }
         }
-         else if(type==fleetControl)
+         else if(message_recv["type"]=="fleetControl")
          {
             
             
-            std::vector<char> data(message_recv.data, message_recv.data+500);
             
-            m_node_manage = m_node_manage.deserialize(data);
+            
+            m_node_manage = m_node_manage.deserialize(message_recv["data"]);
             if(m_init)
             {
                 Debug::log("初始化");
@@ -509,12 +493,13 @@ void Node::work(int fd)
           
 
          }
-        else if(type==voteresponse){//投票类型，follower->candidate
+        else if(message_recv["type"]=="voteresponse"){//投票类型，follower->candidate
             if(state==CANDIDATE)
             {
                 VoteResponse recv_info;
+                recv_info = deserializeVoteResponse(message_recv["data"]);
                 if(recv_info.term>current_term)current_term=recv_info.term;//更新为leader的term（如果更大）
-                recv_info=getVoteResponse(message_recv);
+                
                 if(recv_info.vote_granted==true)//这里还没考虑term！
                 {
                     num_votes++;
@@ -530,11 +515,11 @@ void Node::work(int fd)
                 }//一旦票数大于一半，就变成leader
             }
         }
-        else if(type==appendentries)//心跳（条目数为0）|日志同步信息（更新条目），leader->follower
+        else if(message_recv["type"]=="appendentries")//心跳（条目数为0）|日志同步信息（更新条目），leader->follower
         {
             
             AppendEntries recv_info;
-            recv_info=getAppendEntries(message_recv);
+            recv_info = deserializeAppendEntries(message_recv["data"]);
             if(state==FOLLOWER)
             {
                 AppendResponse res;
@@ -558,61 +543,17 @@ void Node::work(int fd)
                 res.term=current_term;//返回自己的term（可能比leader的大）
                 res.follower_commit=log.committed_index();
                 if(recv_info.leader_commit>log.committed_index())
-                    leader_id=recv_info.leader_id;//更新leader的id
-                leader_commit_index=recv_info.leader_commit;//设置leader的最后一条提交的日志（赞同数超过一半）索引（follower提交不能超过这个数）
-                if(((log.latest_index()==recv_info.prev_log_index)&&(log.term_at(log.latest_index())==recv_info.prev_log_term)))//||(recv_info.prev_log_index==0)
-                {//follower节点的最新条目的索引和term与leader发过来的验证信息匹配，或者leader发现follower日志为空（或者全都不匹配）
-                    int i=0;
-                    while((i<3)&&(recv_info.entries[i][0]!='F'))//根据leader发送的条目进行更新(有效条目)
-                    {
-                        cout<<"follower "<<id<<" 响应leader "<<leader_id<<"同步请求: "<<endl;
-                        cout<<id<<" 最新的条目索引 "<<log.latest_index()<<" leader确认索引 "<<recv_info.prev_log_index<<endl;
-                        cout<<recv_info.prev_log_index<<"+ "<<i+1<<": "<<recv_info.entries[i]<<endl;
-                        string str(recv_info.entries[i]);
-                        mtx_append.lock();
-                        log.append(str,recv_info.entries_term[i]);//把leader的条目索引和周期加入自己的日志
-                        mtx_append.unlock();
-                        i++;
-                    }
-                    res.log_index=recv_info.prev_log_index+i;//follower成功复制到自己的日志的条目的索引
-                    res.success=true;//同步成功       
-                }
-                else//如果未匹配
-                {
-                    if(log.latest_index()>recv_info.prev_log_index)//follwer的index比leader确认的大，（leader还没收到response)
-                    {
-                        if(recv_info.leader_commit>log.committed_index()){
-                            //该node的最新条目数没有leader多，同步，删除自己不匹配的那些条目
-                            //如果自己的日志比leader的多，那么删了多的，一般用在leader转换成follower后收到新的leader的同步信息
-                            cout<<id<<": 不匹配，删掉了 "<<recv_info.prev_log_index+1<<" 到 "<<log.latest_index()<<"的日志"<<endl;
-                            log.erase(recv_info.prev_log_index+1,log.latest_index());
-                        }
-                        res.log_index=-1;
-                    }
-                    else if(log.latest_index()<recv_info.prev_log_index){//follwer的index比leader确认的小，（follower需要leader回滚)
-                        res.log_index=recv_info.prev_log_index-1;//回滚？
-                        cout<<id<<": 请求leader回滚,因为："<<endl;
-                        cout<<"我的最新的条目索引 "<<log.latest_index()<<"leader确认索引 "<<recv_info.prev_log_index<<endl;
-                        cout<<"我的最新的条目周期 "<<log.term_at(log.latest_index())<<"leader确认周期 "<<recv_info.prev_log_term<<endl;
-                        cout<<"不相等"<<endl;
-                    }  
-                    res.success=false;//同步失败
-                }     
-                Message message;
-                message.type = appendresponse;
-
-                std::vector<char> serializedData = res.serialize();
-    
-                // 确保不超出 data 数组的大小
-                size_t dataSize = std::min(serializedData.size(), sizeof(message.data));
-
-                // 使用 memcpy 将数据从 vector 复制到数组
-                std::memcpy(message.data, serializedData.data(), dataSize);
+                    {leader_id=recv_info.leader_id;}//更新leader的id
                 
-                // 如果 serializedData 大小小于 message.data，可以考虑清零剩余部分
-                if (dataSize < sizeof(message.data)) {
-                    std::memset(message.data + dataSize, 0, sizeof(message.data) - dataSize);
-                }
+                res.success = true;
+                
+                json message;
+                message["type"] = "appendresponse";
+
+                std::string serializedData = res.serialize();
+
+                message["data"] = serializedData;
+    
 
                 sockaddr_in addr =  m_node_manage.getSockaddrById(leader_id);
                 //cout<<"leader_id"<<leader_id<<endl;
@@ -630,10 +571,11 @@ void Node::work(int fd)
                 }
             }
         }
-        else if (type == initializeRequestData)
+        else if (message_recv["type"] == "initializeRequestData")
         {
             InitializeData recv_info;
-            std::string receivedString(message_recv.data);
+
+            std::string receivedString(message_recv["data"]);
             recv_info=recv_info.deserialize(receivedString);
             if(recv_info.m_id == leader_id)
             {
@@ -659,19 +601,14 @@ void Node::work(int fd)
 
             InitializeData send_data(m_ids[0], group_id, latestIndex, commitIndex, serializeGroupData);
             
-            Message message;
-            message.type = initializeBackData;
+            json message;
+            message["type"] = "initializeBackData";
 
             std::string serializedSend_data = send_data.serialize();
 
-            std::memset(message.data, 0, sizeof(message.data));
+            message["data"] = serializedSend_data;
 
-                                // 复制字符串到 char 数组中
-                                // 使用 std::min 确保不会超出字符串长度和数组大小的较小值
-                                
-            size_t numBytesToCopy = std::min(serializedSend_data.size(), sizeof(message.data) - 1);
-
-            std::memcpy(message.data, serializedSend_data.c_str(), numBytesToCopy);
+   
 
             int send_id = recv_info.m_id;
 
@@ -683,12 +620,12 @@ void Node::work(int fd)
 
 
         }
-        else if (type == initializeBackData)
+        else if (message_recv["type"] == "initializeBackData")
         {
 
             InitializeData recv_info;
-            std::string receivedString(message_recv.data);
-            recv_info=recv_info.deserialize(receivedString);
+            
+            recv_info=recv_info.deserialize(message_recv["data"]);
 
             int group_id = recv_info.group_id;
 
@@ -709,6 +646,9 @@ void Node::work(int fd)
                 m_log.latest_index[group_id] = recv_info.latestIndex;
                 m_log.committed_index[group_id] = recv_info.commitIndex;
 
+               
+
+
                 Debug::log("恢复一组数据");
             }
             else
@@ -719,12 +659,12 @@ void Node::work(int fd)
 
 
         }
-        else if (type == fleetGroupSendData)
+        else if (message_recv["type"] == "fleetGroupSendData")
         {
             
             FleetGroupSendData recv_info;
-            std::string receivedString(message_recv.data);
-            recv_info=recv_info.deserialize(receivedString);
+            
+            recv_info=recv_info.deserialize(message_recv["data"]);
             uint64_t commitIndex = m_log.getCommittedIndex(recv_info.group_id);
             uint64_t latestIndex = m_log.getLatestIndex(recv_info.group_id);
             
@@ -775,19 +715,12 @@ void Node::work(int fd)
                 send_data.success = true;
 
 
-                Message message;
-                message.type = fleetGroupReceiveData;
+                json message;
+                message["type"] = "fleetGroupReceiveData";
 
                 std::string serializedSend_data = send_data.serialize();
+                message["data"] = serializedSend_data;
 
-                std::memset(message.data, 0, sizeof(message.data));
-
-                                // 复制字符串到 char 数组中
-                                // 使用 std::min 确保不会超出字符串长度和数组大小的较小值
-                                
-                size_t numBytesToCopy = std::min(serializedSend_data.size(), sizeof(message.data) - 1);
-
-                std::memcpy(message.data, serializedSend_data.c_str(), numBytesToCopy);
 
                 int send_id = m_node_manage.getLeaderIdByGroup(recv_info.group_id);
                 
@@ -804,13 +737,12 @@ void Node::work(int fd)
 
         }
 
-        else if (type == fleetGroupReceiveData)
+        else if (message_recv["type"] == "fleetGroupReceiveData")
         {
             
             FleetGroupReceiveData recv_info;
-            std::string receivedString(message_recv.data);
 
-            recv_info = recv_info.deserialize(receivedString);
+            recv_info = recv_info.deserialize(message_recv["data"]);
 
             int group_id = recv_info.group_id;
             Debug::log("收到投票");
@@ -820,7 +752,7 @@ void Node::work(int fd)
             uint64_t latestIndex = recv_info.latestIndex;
             
 
-            recv_info=recv_info.deserialize(receivedString);
+            
             if(recv_info.success)
             {
                 for(int id : recv_info.ids)
@@ -863,13 +795,13 @@ void Node::work(int fd)
                 
             }            
         }
-        else if(type==appendresponse)//回应心跳|同步信息 follower->leader
+        else if(message_recv["type"]=="appendresponse")//回应心跳|同步信息 follower->leader
         {
             if(state==LEADER)
             {
 
                 AppendResponse recv_info;
-                recv_info=recv_info.deserialize(message_recv.data,1);
+                recv_info=recv_info.deserialize(message_recv["data"]);
                 if(recv_info.identify)
                 {
                     m_recovery_ids.push_back(recv_info.follow_ids[0]);
@@ -883,16 +815,9 @@ void Node::work(int fd)
                             m_active_id_table.setActive(id,true);
                         }
                 }
-                int follower_id = recv_info.follow_ids[0];
+                
                 if(recv_info.term>current_term)current_term=recv_info.term;//如果follower的term比leader大。那么更新为大的term
-                if(recv_info.success==true)
-                {
-                    for(int i=match_index[fd_id(id,follower_id)]+1;i<=recv_info.log_index;i++)//刚刚成功复制给follower的条目
-                    {
-                        log.add_num(i-1,follower_id);
-                        //cout<<"条目"<<i<<"获得了"<<recv_info.follower_id<<"的响应"<<endl;
-                    }  
-                }    
+       
 
                 if(recv_info.follower_commit>log.committed_index()){
                     state=FOLLOWER;
@@ -902,108 +827,26 @@ void Node::work(int fd)
                     leader_commit_index=0;
                     return ;
                 }
-                mtx_match.lock();
-                if(recv_info.log_index!=-1)//代表follwer把多余的删了，此时match不用变，等待回滚匹配，以免造成死循环 0  3 2 1|回滚| 3 0 3 2 1|回滚|  3 0 ...
-                {  
-                    match_index[fd_id(id,follower_id)]=recv_info.log_index;//匹配follower最新更新到的条目索引
-                    if(match_index[fd_id(id,follower_id)]!=0)//如果follower返回的index不为0，则更新相应node的match index为返回值
-                        match_term[fd_id(id,follower_id)]=log.term_at(match_index[fd_id(id,follower_id)]);//match index相应的term
-                    else{
-                        match_term[fd_id(id,follower_id)]=0;//index为0，说明follower中没有匹配的或者为空，此时baterm设置为0来匹配follower
-                    }     
-                }
-               
-                
-                mtx_match.unlock();
+
                 live=5;//翻转leader沙漏
             }
         }
-        else if(type==clientresponse)//leader对follower（作为中转）传过来的客户请求的回应，leader->follower
-        {
-            ClientResponse recv_info;
-            recv_info=getClientResponse(message_recv);
-            int ret = send(recv_info.client_fd, &recv_info.message, sizeof(recv_info.message), 0);
-            if(ret!=-1)cout<<id<<" 成功响应客户端(follower)"<<": "<<recv_info.message<<endl;
-            //cout<<recv_info.fd<<endl;
-            //cout<<recv_info.message<<endl;
-        }
-        else if(type==clientrequest)//follower（作为中转）传给leader的客户请求，follower->leader
-        {
-            //cout<<"get a req from follower"<<endl;
-            while(state==CANDIDATE){//如果是竞争者，阻塞
-                
-            }
-            if(state==FOLLOWER){//这种情况是leader在接收到消息时变成了follower
-                while(leader_id==0){//还不知道leader的id，不能乱发，否则会越过数组范围，阻塞
-                    if(state==LEADER){
-                        goto leader_work1;//如果发现自己又变成leader了，执行leader的操作
-                    }
-                }
-
-                sockaddr_in addr =  m_node_manage.getSockaddrById(leader_id);
-                
-                sendmsg(m_addr_fd_map[addr], addr ,message_recv);//知道leader id（有效的）了，可以再转发给新的leader
-                //这里有一个巧妙的地方，新的leader会把消息返回给连接客户端的那个follwer，而不是第二或者更多次转发的follower，因为传递的message中的id号没变
-            }
-            else if(state==LEADER){
-
-            leader_work1:
-                while(log.committed_index()<log.latest_index())
-                {
-                    //如果还没提交过去的日志，那么阻塞等待，比如set后get，不等待set执行完后再get,会出错   
-                }
-                ClientRequest recv_info;
-                recv_info=getClientRequest(message_recv);
-                int NodeId=recv_info.node_id;//连接客户端的node的id
-                int ClientFd=recv_info.client_fd;//node连接客户端的套接字
-                string str(recv_info.message);
-                mtx_append.lock();
-                log.append(str,current_term);//提交日志
-                mtx_append.unlock();
-                std::vector<std::string> result = parse_string(str);//解析请求
-                //构造返回报文（->node connect to client)
-                ClientResponse res;
-                memset(res.message,0,sizeof(res.message));
-                res.client_fd=ClientFd;
-                res.node_id=NodeId;
-                string msg;
-                if(result[0]=="GET")
-                {
-                    cout<<"get a get ask(from follwer)"<<endl;
-                    msg=to_redis_string(kv.get(result[1]));
-                    if(kv.get(result[1])=="")msg="1\r\n$3\r\nnil\r\n";//找不到key对应的value，返回nil
-                    std::strcpy(res.message, msg.c_str());
-                }
-                else if(result[0]=="DEL")
-                {
-                    int count=0;
-                    for(int k=1;k<=static_cast<int>(result.size())-1;k++){//返回有效的删除数
-                        if(kv.get(result[k])!="")
-                            count++;
-                    }
-                    cout<<"get a del ask(leader)"<<endl;
-                    msg=":"+to_string(count)+"\r\n";
-                    std::strcpy(res.message, msg.c_str());
-                }
-                else if(result[0]=="SET")
-                {
-                    cout<<"get a set ask(from follwer)"<<endl;//返回ok就是
-                    msg="+OK\r\n";
-                    std::strcpy(res.message, msg.c_str());
-                }
-                //while(log.committed_index()<log.latest_index()){//这段其实应该是必要的，为了快点响应就先注释了
-                    //确认提交了该条目才继续
-                //}
-                Message res_msg=toMessage(clientresponse,&res,sizeof(res));
-                sendmsg(send_fd[NodeId],others_addr[NodeId],res_msg);
-            }
-        }
-        else if(type==info){//客户端client的请求，client->leader（直接回应）|follower（中转）|candidate(fail)
+ 
+            
 
 
-            string s = getString(message_recv);
+ 
+
+       
+        
+    }
+    else
+    {
+           
             Debug::log("收到client请求");
-            json receiveJson = json::parse(s);
+            json receiveJson;
+
+            receiveJson = message_recv;
 
             std::string key = receiveJson["key"];
             std::string value = receiveJson.value("value", ""); // 如果没有 value，则默认为空字符串
@@ -1096,51 +939,6 @@ void Node::work(int fd)
             string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
             send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
             
-
-
- 
-
-            if(false){//client->leader
-
-            
-                cout<<"get a client ask(leader)"<<endl;
-                while(log.committed_index()<log.latest_index()){
-                
-                }
-                mtx_append.lock();
-                log.append(s,current_term);//提交日志
-                mtx_append.unlock();
-                std::vector<std::string> result = parse_string(s);
-                //cout<<result[0]<<endl;
-                string msg;
-                if(result[0]=="GET")
-                {
-                    cout<<"get a get ask(leader)"<<endl;
-                    msg=to_redis_string(kv.get(result[1]));
-                    if(kv.get(result[1])=="")msg="1\r\n$3\r\nnil\r\n";
-                }
-                else if(result[0]=="DEL")
-                {
-                    int count=0;
-                    for(int k=1;k<=static_cast<int>(result.size())-1;k++){
-                        if(kv.get(result[k])!="")
-                            count++;
-                    }
-                    cout<<"get a del ask(leader)"<<endl;
-                    msg=":"+to_string(count)+"\r\n";
-                }
-                else if(result[0]=="SET")
-                {
-                    cout<<"get a set ask(leader)"<<endl;
-                    msg="+OK\r\n";
-                }
-                //while(log.committed_index()<log.latest_index()){
-                    //请求被提交了才返回信息给客户端
-                //}
-                int ret = send(fd, msg.c_str(), msg.size(), 0);
-                if(ret!=-1)cout<<id<<" 成功响应客户端(leader)"<<": "<<msg<<endl;
-            }
-        }
     }
 }
 
@@ -1275,7 +1073,7 @@ void Node::accept_connections() {
 
 //用于节点来send信息的函数（包括创建连接,重连,这样可以通过发送信息（心跳，投票等)来快速和新加入的节点连接）
 //当连接断开后，也不会中断（sendMessage(fd,msg)防止中断）
-void Node::sendmsg(int &fd,struct sockaddr_in addr,Message msg){
+void Node::sendmsg(int &fd,struct sockaddr_in addr,json msg){
     lock_guard<std::mutex> lock(send_mutex_);  // 加锁
     int ret;
 
@@ -1402,13 +1200,10 @@ void Node::sendGroupLog()
                 send_data.entriesSerialized = serializedEntries;
                 std::string serializedSend_data = send_data.serialize();
 
-                Message message;
-                message.type = fleetGroupSendData;
-                std::memset(message.data, 0, sizeof(message.data));
-
-                // 复制字符串到 char 数组中
-                size_t numBytesToCopy = std::min(serializedSend_data.size(), sizeof(message.data) - 1);
-                std::memcpy(message.data, serializedSend_data.c_str(), numBytesToCopy);
+                json message;
+                message["type"] = "fleetGroupSendData";
+                message["data"] = serializedSend_data;
+                
 
                 std::unordered_set<std::string> sentAddresses;
 
@@ -1497,18 +1292,11 @@ void Node::initializeNewId(int newId, bool init) {
         {
 
             InitializeData request(newId,group_id,0,0,"");
-            Message message;
-            message.type = initializeRequestData;
+            json message;
+            message["type"] = "initializeRequestData";
             std::string serializedSend_data = request.serialize();
+            message["data"] = serializedSend_data;
 
-            std::memset(message.data, 0, sizeof(message.data));
-
-                                    // 复制字符串到 char 数组中
-                                    // 使用 std::min 确保不会超出字符串长度和数组大小的较小值
-                                    
-            size_t numBytesToCopy = std::min(serializedSend_data.size(), sizeof(message.data) - 1);
-
-            std::memcpy(message.data, serializedSend_data.c_str(), numBytesToCopy);
             
             int leader_id = m_node_manage.getLeaderIdByGroup(group_id);
             
@@ -1559,7 +1347,7 @@ void Node::checkAndUpdateIds() {
 }
 
 void Node::sendHeartBeat()
-{
+{                   Debug::log("发送心跳");
                     for(int i=0;i<num-1;i++)
                     {
                         AppendEntries heartbeat;
@@ -1590,11 +1378,14 @@ void Node::sendHeartBeat()
                                 heartbeat.entries_term[j-1]=0;
                             }
                         }
-                        Message message=toMessage(appendentries,&heartbeat,sizeof(heartbeat));
+                        json message;
+                        message["type"] ="appendentries";
+
+                        message["data"] = serializeAppendEntries(heartbeat);
                                     
 
                         sendmsg(send_fd[i],others_addr[i],message);
-                        //printAddressInfo(others_addr[i]);
+                        printAddressInfo(others_addr[i]);
                     }     
 }
 

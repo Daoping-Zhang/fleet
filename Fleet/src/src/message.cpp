@@ -2,6 +2,11 @@
 #include <netinet/tcp.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <nlohmann/json.hpp>
+
+// 使用简化的命名空间
+using json = nlohmann::json;
+
 Message toMessage(MessageType type, void* data, size_t size) {
     Message message;
     message.type = type;
@@ -66,48 +71,55 @@ void handle_for_sigpipe(){
 }
 
 
-int sendMessage(int sockfd, Message message) {
+int sendMessage(int sockfd, json message) {
     handle_for_sigpipe(); // 设置SIGPIPE信号处理方式为忽略
-    int ret = send(sockfd, &message, sizeof(message), 0);
+    string serialized_message = message.dump();  // 序列化 JSON 对象为字符串
+    int ret = send(sockfd, serialized_message.c_str(), serialized_message.size(), 0); 
+    
     if (ret < 0) {
         if (errno == EPIPE || errno == ECONNRESET) {
             // 对方已经关闭了连接
+            std::cerr << "Connection closed by peer: " << strerror(errno) << std::endl;
             return -1;
-        }
-        else {
+        } else {
             // 发生了其他错误
             perror("send");
+            std::cerr << "Send error: " << strerror(errno) << std::endl;
             return -2;
         }
     }
+    std::cout << "sendMessage: Message sent successfully" << std::endl;
     return 1;
 }
-
 
 union Data {
     Message message;
     char stringData[sizeof(Message)];
 };
 
-int recvMessage(int sockfd, Message& message) {
-    if (sockfd == -1) {
-        return -1;
+int recvMessage(int fd, json& message_recv) {
+    // 设置接收缓冲区
+    std::vector<char> buffer(1024); // 大小为 1024 字节的接收缓冲区
+
+    // 从文件描述符 fd 读取数据
+    int bytes_received = read(fd, buffer.data(), buffer.size());
+    if (bytes_received < 0) {
+        std::cerr << "Failed to read data from socket." << std::endl;
+        return -1;  // 读取失败
+    } else if (bytes_received == 0) {
+        std::cerr << "Connection closed." << std::endl;
+        return 0;  // 连接已关闭
     }
-    Data data;
-    int bytes = recv(sockfd, data.stringData, sizeof(data.stringData), 0);
-    if (bytes < 0) {
-        return -1;
-    } else if (bytes == 0) {
-        return -1;
+
+    // 将接收到的数据转换为 std::string，然后尝试解析为 JSON
+    try {
+        std::string recv_data(buffer.begin(), buffer.begin() + bytes_received);
+        message_recv = json::parse(recv_data);
+    } catch (json::parse_error& e) {
+        std::cerr << "JSON parse error: " << e.what() << std::endl;
+        return -2;  // JSON 解析错误
     }
-    if (bytes == sizeof(Message)) { // message received
-        message = data.message;
-    } else { // string received
-        message.type = info;
-        std::string str(data.stringData);
-        message.data[0] = '\0'; // clear the data field
-        str.copy(message.data, bytes); // copy at most 99 characters
-    }
-    memset(data.stringData, 0, sizeof(data.stringData));
-    return 1;
+
+    return bytes_received;  // 返回接收到的字节数
 }
+

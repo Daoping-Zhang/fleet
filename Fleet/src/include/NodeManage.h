@@ -142,10 +142,10 @@ public:
     std::vector<int> m_ids;
 
         // 序列化 NodeManage 数据
-    std::vector<char> serialize(bool includeGroups) const;
+    std::string serialize() const;
 
     // 反序列化 NodeManage 数据
-    static NodeManage deserialize(const std::vector<char>& data);
+    static NodeManage deserialize(const std::string& data);
     std::unordered_map<int, sockaddr_in> id_to_sockaddr;
     std::unordered_map<sockaddr_in, std::vector<int>, SockaddrInHash, SockaddrInEqual> sockaddr_to_ids;
     std::unordered_map<int, GroupInfo> groups;

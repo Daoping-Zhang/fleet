@@ -121,6 +121,7 @@ struct ClientRequest{
 
 
 
+
 // 将特定类型的数据转换为 Message 数据
 //RequestVoteData requestVoteData = {1, 2, 3, 4};
 //Message requestVoteMessage = toMessage(requestvote, &requestVoteData, sizeof(requestVoteData));
@@ -152,9 +153,9 @@ ClientRequest getClientRequest(const Message& message) ;
 string getString(const Message& message) ;
 
 void handle_for_sigpipe();
-int sendMessage(int sockfd, Message message);
+int sendMessage(int sockfd, json message);
 
-int recvMessage(int sockfd, Message& message);
+int recvMessage(int sockfd, json& message);
 
 
 

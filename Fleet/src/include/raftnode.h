@@ -94,6 +94,77 @@ public:
     void checkAndUpdateIds(); // 添加的用于检查和更新ID的方法
     bool is_fd_active(int fd, sockaddr_in addr);
 
+    
+// 序列化 RequestVote 结构体到字符串
+std::string serializeRequestVote(const RequestVote& request) {
+    json j;
+    j["term"] = request.term;
+    j["candidate_id"] = request.candidate_id;
+    j["last_log_index"] = request.last_log_index;
+    j["last_log_term"] = request.last_log_term;
+    return j.dump();  // 将 JSON 对象转换为字符串
+}
+
+// 从字符串反序列化到 RequestVote 结构体
+RequestVote deserializeRequestVote(const std::string& data) {
+    json j = json::parse(data);  // 将字符串解析为 JSON 对象
+    RequestVote request;
+    request.term = j["term"].get<int>();
+    request.candidate_id = j["candidate_id"].get<int>();
+    request.last_log_index = j["last_log_index"].get<int>();
+    request.last_log_term = j["last_log_term"].get<int>();
+    return request;
+}
+
+// 序列化 VoteResponse 结构体到字符串
+std::string serializeVoteResponse(const VoteResponse& response) {
+    json j;
+    j["term"] = response.term;
+    j["vote_granted"] = response.vote_granted;
+    return j.dump();  // 将 JSON 对象转换为字符串
+}
+
+// 从字符串反序列化到 VoteResponse 结构体
+VoteResponse deserializeVoteResponse(const std::string& data) {
+    auto j = json::parse(data);  // 将字符串解析为 JSON 对象
+    VoteResponse response;
+    response.term = j["term"].get<int>();
+    response.vote_granted = j["vote_granted"].get<bool>();
+    return response;
+}
+
+
+// 序列化 AppendEntries 结构体为 JSON 字符串
+std::string serializeAppendEntries(const AppendEntries& ae) {
+    json j;
+    j["term"] = ae.term;
+    j["leader_id"] = ae.leader_id;
+    j["prev_log_index"] = ae.prev_log_index;
+    j["prev_log_term"] = ae.prev_log_term;
+    j["leader_commit"] = ae.leader_commit;
+
+
+    j["identify"] = ae.identify;
+
+    return j.dump();  // 转换 JSON 对象为字符串
+}
+
+// 从 JSON 字符串反序列化到 AppendEntries 结构体
+AppendEntries deserializeAppendEntries(const std::string& input) {
+    auto j = json::parse(input);
+    AppendEntries ae;
+    ae.term = j["term"];
+    ae.leader_id = j["leader_id"];
+    ae.prev_log_index = j["prev_log_index"];
+    ae.prev_log_term = j["prev_log_term"];
+    ae.leader_commit = j["leader_commit"];
+
+    ae.identify = j["identify"];
+
+    return ae;
+}
+
+
 
 
 private:
@@ -115,7 +186,7 @@ private:
     void CandidateLoop();//候选者状态循环，
     //向其他节点发送 RequestVote 消息并等待投票结果，如果获得多数选票，则成为 Leader
     void LeaderLoop();//领导者状态循环，包括向其他节点发送 AppendEntries 消息并等待响应，如果收到多数节点的确认，则提交日志条目
-    void sendmsg(int &fd,struct sockaddr_in addr,Message msg);//发送信息
+    void sendmsg(int &fd,struct sockaddr_in addr,json msg);//发送信息
 
     void executeEntries(int groupId, uint64_t now_commitIndex, uint64_t latestIndex, FleetKVStore& kv, FleetLog& log);
     

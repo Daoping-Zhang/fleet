@@ -56,156 +56,73 @@ std::vector<int> NodeManage::getGroupIndicesWithMemberId(int memberId) {
     return indices;
 }
 
-std::vector<char> NodeManage::serialize(bool includeGroups) const {
-        std::vector<char> data;
-        // Serialize commit_num
-        data.insert(data.end(), reinterpret_cast<const char*>(&commit_num), reinterpret_cast<const char*>(&commit_num + 1));
-        // Serialize id_to_sockaddr
-        size_t map_size = id_to_sockaddr.size();
-        data.insert(data.end(), reinterpret_cast<const char*>(&map_size), reinterpret_cast<const char*>(&map_size + 1));
-        for (const auto& pair : id_to_sockaddr) {
-            int id = pair.first;
-            const sockaddr_in& addr = pair.second;
-            data.insert(data.end(), reinterpret_cast<const char*>(&id), reinterpret_cast<const char*>(&id + 1));
-            data.insert(data.end(), reinterpret_cast<const char*>(&addr), reinterpret_cast<const char*>(&addr + 1));
-        }
+std::string NodeManage::serialize() const {
+        json response;
+        json nodeArray = json::array();  // Nodes 数组
+        json groupArray = json::array(); // Groups 数组
 
-        // Serialize sockaddr_to_ids
-        map_size = sockaddr_to_ids.size();
-        data.insert(data.end(), reinterpret_cast<const char*>(&map_size), reinterpret_cast<const char*>(&map_size + 1));
+        // 添加 commit_num
+        response["commit_num"] = commit_num;
+
+        // 构造 nodes 部分
         for (const auto& pair : sockaddr_to_ids) {
-            const sockaddr_in& addr = pair.first;
-            data.insert(data.end(), reinterpret_cast<const char*>(&addr), reinterpret_cast<const char*>(&addr + 1));
-
-            const std::vector<int>& ids = pair.second;
-            size_t vector_size = ids.size();
-            data.insert(data.end(), reinterpret_cast<const char*>(&vector_size), reinterpret_cast<const char*>(&vector_size + 1));
-            for (int id : ids) {
-                data.insert(data.end(), reinterpret_cast<const char*>(&id), reinterpret_cast<const char*>(&id + 1));
+            for (int id : pair.second) {
+                json nodeInfo;
+                nodeInfo["id"] = id;
+                std::stringstream ipStream;
+                ipStream << inet_ntoa(pair.first.sin_addr) << ":" << ntohs(pair.first.sin_port);
+                nodeInfo["ip"] = ipStream.str();
+                nodeArray.push_back(nodeInfo);
             }
         }
 
-        // Conditionally serialize groups
-        if (includeGroups) {
-            map_size = groups.size();
-            data.insert(data.end(), reinterpret_cast<const char*>(&map_size), reinterpret_cast<const char*>(&map_size + 1));
-            for (const auto& pair : groups) {
-                int groupId = pair.first;
-                const GroupInfo& info = pair.second;
-                data.insert(data.end(), reinterpret_cast<const char*>(&groupId), reinterpret_cast<const char*>(&groupId + 1));
-
-                int leaderId = info.leaderId;
-                data.insert(data.end(), reinterpret_cast<const char*>(&leaderId), reinterpret_cast<const char*>(&leaderId + 1));
-
-                const std::vector<int>& memberIds = info.memberIds;
-                size_t  vector_size = memberIds.size();
-                data.insert(data.end(), reinterpret_cast<const char*>(&vector_size), reinterpret_cast<const char*>(&vector_size + 1));
-                for (int memberId : memberIds) {
-                    data.insert(data.end(), reinterpret_cast<const char*>(&memberId), reinterpret_cast<const char*>(&memberId + 1));
-                }
-            }
+        // 构造 groups 部分
+        for (const auto& group : groups) {
+            json groupInfo;
+            groupInfo["id"] = group.first;
+            groupInfo["leader"] = group.second.leaderId;
+            groupInfo["nodes"] = group.second.memberIds;
+            groupArray.push_back(groupInfo);
         }
 
-        return data;
+        response["nodes"] = nodeArray;
+        response["groups"] = groupArray;
+
+        return response.dump();
 }
 
+NodeManage NodeManage::deserialize(const std::string& s) {
 
-NodeManage NodeManage::deserialize(const std::vector<char>& data) {
-    NodeManage nodeManage;
-        size_t i = 0;
-        // 反序列化 commit_num
-        std::memcpy(&nodeManage.commit_num, &data[i], sizeof(nodeManage.commit_num));
-        i += sizeof(nodeManage.commit_num);
-        // Deserialize id_to_sockaddr
-        size_t map_size;
-        if (data.size() >= i + sizeof(size_t)) {
-            std::memcpy(&map_size, &data[i], sizeof(map_size));
-            i += sizeof(map_size);
-        }
+        json data = json::parse(s);
+        NodeManage nodeManage;
+        nodeManage.commit_num = data["commit_num"].get<int>();
 
-        for (size_t j = 0; j < map_size && i < data.size(); ++j) {
-            int id;
+        // 解析 nodes
+        for (const auto& nodeInfo : data["nodes"]) {
+            int id = nodeInfo["id"].get<int>();
+            std::string ipPort = nodeInfo["ip"].get<std::string>();
+            size_t colonPos = ipPort.find(':');
+            std::string ip = ipPort.substr(0, colonPos);
+            int port = std::stoi(ipPort.substr(colonPos + 1));
+
             sockaddr_in addr;
-            if (data.size() >= i + sizeof(int)) {
-                std::memcpy(&id, &data[i], sizeof(id));
-                i += sizeof(id);
-            }
-            if (data.size() >= i + sizeof(sockaddr_in)) {
-                std::memcpy(&addr, &data[i], sizeof(addr));
-                i += sizeof(addr);
-            }
-            nodeManage.id_to_sockaddr[id] = addr;
+            addr.sin_family = AF_INET;
+            addr.sin_port = htons(static_cast<uint16_t>(port));
+            inet_aton(ip.c_str(), &addr.sin_addr);
+
+            nodeManage.sockaddr_to_ids[addr].push_back(id); // 假设每个地址可能有多个ID
         }
 
-        // Deserialize sockaddr_to_ids
-        if (data.size() >= i + sizeof(size_t)) {
-            std::memcpy(&map_size, &data[i], sizeof(map_size));
-            i += sizeof(map_size);
-        }
+        // 解析 groups
+        for (const auto& groupInfo : data["groups"]) {
+            int groupId = groupInfo["id"].get<int>();
+            int leaderId = groupInfo["leader"].get<int>();
+            std::vector<int> memberIds = groupInfo["nodes"].get<std::vector<int>>();
 
-        for (size_t j = 0; j < map_size && i < data.size(); ++j) {
-            sockaddr_in addr;
-            if (data.size() >= i + sizeof(sockaddr_in)) {
-                std::memcpy(&addr, &data[i], sizeof(addr));
-                i += sizeof(sockaddr_in);
-            }
-
-            size_t vector_size;
-            if (data.size() >= i + sizeof(size_t)) {
-                std::memcpy(&vector_size, &data[i], sizeof(vector_size));
-                i += sizeof(vector_size);
-            }
-
-            std::vector<int> ids;
-            ids.reserve(vector_size);
-            for (size_t k = 0; k < vector_size && i < data.size(); ++k) {
-                int id;
-                if (data.size() >= i + sizeof(int)) {
-                    std::memcpy(&id, &data[i], sizeof(id));
-                    i += sizeof(int);
-                }
-                ids.push_back(id);
-            }
-            nodeManage.sockaddr_to_ids[addr] = ids;
-        }
-
-        // Optional: Deserialize groups if data is still available
-        if (i + sizeof(size_t) <= data.size()) {
-            std::memcpy(&map_size, &data[i], sizeof(map_size));
-            i += sizeof(map_size);
-
-            for (size_t j = 0; j < map_size && i < data.size(); ++j) {
-                int groupId;
-                if (data.size() >= i + sizeof(int)) {
-                    std::memcpy(&groupId, &data[i], sizeof(groupId));
-                    i += sizeof(int);
-                }
-
-                int leaderId;
-                if (data.size() >= i + sizeof(int)) {
-                    std::memcpy(&leaderId, &data[i], sizeof(leaderId));
-                    i += sizeof(int);
-                }
-
-                size_t member_size;
-                if (data.size() >= i + sizeof(size_t)) {
-                    std::memcpy(&member_size, &data[i], sizeof(member_size));
-                    i += sizeof(member_size);
-                }
-
-                std::vector<int> members;
-                members.reserve(member_size);
-                for (size_t k = 0; k < member_size && i < data.size(); ++k) {
-                    int memberId;
-                    if (data.size() >= i + sizeof(int)) {
-                        std::memcpy(&memberId, &data[i], sizeof(memberId));
-                        i += sizeof(int);
-                    }
-                    members.push_back(memberId);
-                }
-                GroupInfo info{leaderId, members};
-                nodeManage.groups[groupId] = info;
-            }
+            GroupInfo info;
+            info.leaderId = leaderId;
+            info.memberIds = memberIds;
+            nodeManage.groups[groupId] = info;
         }
 
         return nodeManage;
@@ -353,7 +270,7 @@ json NodeManage::serializeNetworkInfo(int leader_id) const {
     }
 
     response["nodes"] = nodeArray;
-    response["fleetLeader"] = std::to_string(leader_id);
+    response["fleetLeader"] = leader_id;
     response["groups"] = groupArray;
 
     return response;

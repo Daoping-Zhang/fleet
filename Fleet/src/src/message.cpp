@@ -31,12 +31,7 @@ AppendEntries getAppendEntries(const Message& message) {
     return appendEntries;
 }
 
-// 从 Message 中还原 AppendResponse 结构体
-AppendResponse getAppendResponse(const Message& message) {
-    AppendResponse appendResponse;
-    std::memcpy(&appendResponse, message.data, sizeof(appendResponse));
-    return appendResponse;
-}
+
 
 // 从 Message 中还原 ClientResponse 结构体
 ClientResponse getClientResponse(const Message& message) {
@@ -50,6 +45,9 @@ ClientRequest getClientRequest(const Message& message) {
     clientRequest = *reinterpret_cast<const ClientRequest*>(message.data);
     return clientRequest;
 }
+
+
+
 
 
 

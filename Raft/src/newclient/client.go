@@ -24,13 +24,17 @@ func (c Command) String() string {
 }
 
 func CommandFromString(s string) Command {
-	switch s {
+	switch strings.ToUpper(s) {
 	case "SET":
 		return SET
 	case "DEL":
 		return DEL
 	case "GET":
 		return GET
+	case "POWERON":
+		return POWERON
+	case "POWEROFF":
+		return POWEROFF
 	default:
 		return -1
 	}

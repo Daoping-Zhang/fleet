@@ -12,7 +12,7 @@ import (
 )
 
 type TestAction struct {
-	Time   int
+	Time   int // in microseconds
 	Action string
 	Repeat int
 }
@@ -99,12 +99,19 @@ func executeTest(testName string) {
 		currWorkers++
 	}
 
+	// add jobs to queue
+	start := time.Now()
 	for _, action := range test.Actions {
+		elapsed := time.Since(start)
+		if elapsed < time.Microsecond*time.Duration(action.Time) {
+			time.Sleep(time.Microsecond*time.Duration(action.Time) - elapsed)
+		}
 		for i := 0; i < action.Repeat; i++ {
 			jobs <- CommandFromString(action.Action)
 		}
 	}
 
+	// read results
 	for i := 0; i < TestResult.TotalJobs; i++ {
 		result := <-results
 		TestResultLock.Lock()
@@ -134,6 +141,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 				result.Success = true
 				keys[key] = true
 			}
+			slog.Info("SET", `key`, key, `value`, value, `ok`, ok)
 			result.Bytes = len(key) + len(value) + 1
 		case DEL:
 			key := getRandExistingKey()
@@ -143,6 +151,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 				keys[key] = false
 				result.Bytes = len(key)
 			}
+			slog.Info("DEL", `key`, key, `ok`, ok)
 		case GET:
 			key := getRandExistingKey()
 			ok, resp := SchedSendReceive(GET, key)
@@ -150,6 +159,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 				result.Success = true
 				result.Bytes = len(resp)
 			}
+			slog.Info("GET", `key`, key, `ok`, ok, `value`, resp)
 		case POWEROFF: // POWEROFF and POWERON doesn't follow traditional per-group scheduling
 			node := getFirstAliveNode() // TODO: Use random alive node?
 			if node == nil {
@@ -161,6 +171,10 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 			if ok {
 				result.Success = true
 			}
+			nodeLock.Lock()
+			node.IsUp = false
+			nodeLock.Unlock()
+			slog.Info("Poweroff command", `node`, node)
 		case POWERON:
 			node := getFirstDeadNode()
 			if node == nil {
@@ -172,6 +186,10 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 			if ok {
 				result.Success = true
 			}
+			nodeLock.Lock()
+			node.IsUp = true
+			nodeLock.Unlock()
+			slog.Info("Poweron command", `node`, node)
 		}
 		result.Latency = time.Since(start)
 		results <- result

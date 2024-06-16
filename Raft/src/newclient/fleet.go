@@ -116,13 +116,28 @@ func updateFleet() {
 
 	// Update nodes
 	nodeLock.Lock()
-	nodeID = make(map[int]*Node)
-	nodes = []Node{}
+	currentNodesMap := make(map[string]*Node)
+	for _, node := range nodes {
+		currentNodesMap[node.Address] = &node
+	}
+
 	for _, node := range fleetMsg.Nodes {
-		newNode := Node{Address: node.IP, IsUp: true}
-		nodes = append(nodes, newNode)
-		for _, id := range node.ID {
-			nodeID[id] = &newNode
+		if _, exists := currentNodesMap[node.IP]; !exists {
+			// If node exists locally, respect local status
+			// If node does not exist locally, add it
+			newNode := Node{Address: node.IP, IsUp: true}
+			currentNodesMap[node.IP] = &newNode
+		}
+	}
+
+	// Rebuild the nodes slice
+	nodes = []Node{}
+	nodeID = make(map[int]*Node)
+	for _, nodeMsg := range fleetMsg.Nodes {
+		node := currentNodesMap[nodeMsg.IP]
+		nodes = append(nodes, *node)
+		for _, id := range nodeMsg.ID {
+			nodeID[id] = node
 		}
 	}
 	nodeLock.Unlock()

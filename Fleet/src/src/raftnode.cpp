@@ -999,159 +999,106 @@ void Node::work(int fd)
             }
         }
         else if(type==info){//客户端client的请求，client->leader（直接回应）|follower（中转）|candidate(fail)
+            try {
+                string s = getString(message_recv);
+                Debug::log("收到client请求");
+                json receiveJson = json::parse(s);
 
+                std::string key = receiveJson["key"];
+                std::string value = receiveJson.value("value", ""); // 如果没有 value，则默认为空字符串
+                std::string method = receiveJson["method"];
+                uint64_t hashKey = receiveJson["hashKey"];
+                int groupId = receiveJson["groupId"];
 
-            string s = getString(message_recv);
-            Debug::log("收到client请求");
-            json receiveJson = json::parse(s);
-
-            std::string key = receiveJson["key"];
-            std::string value = receiveJson.value("value", ""); // 如果没有 value，则默认为空字符串
-            std::string method = receiveJson["method"];
-            uint64_t hashKey = receiveJson["hashKey"];
-            int groupId = receiveJson["groupId"];
-
-            mtx_append.lock();
-            uint64_t commitIndex = m_log.getCommittedIndex(groupId);
-            uint64_t latestIndex = m_log.getLatestIndex(groupId);  
-            mtx_append.unlock();
-
-            json response;
-
-            if(method == "GET")
-            {
-                if(key == "fleet_info")
-                {
-                    Debug::log("返回控制信息");
-                    response = m_node_manage.serializeNetworkInfo(leader_id);
-                    m_node_manage.serializeNetworkInfo(leader_id);
-                    response = {
-                        {"code", 1 },
-                        {"value", m_node_manage.serializeNetworkInfo(leader_id).dump()}
-                    };
-                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
-                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
-                    return;
-                }
-
-                else if (key == "node_active")
-                {
-                    Debug::log("恢复");
-                    response = {
-                        {"code", 1 },
-                        {"value", ""}
-                    };
-                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
-                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
-                    return;
-                }
-                
-
-                else
-                {
-                    Debug::log("处理GET请求");
-                }
-               
-            }
-            else if(method == "SET")
-            {
-
-                
-    
-              
-                Debug::log("处理SET操作");
-                LogEntry entry(key, value, method, hashKey, m_node_manage.commit_num);
-
-                std::cout<<commitIndex<<std::endl;
-                std::cout<<latestIndex<<std::endl;        
                 mtx_append.lock();
-                m_log.append(groupId, entry);
+                uint64_t commitIndex = m_log.getCommittedIndex(groupId);
+                uint64_t latestIndex = m_log.getLatestIndex(groupId);  
                 mtx_append.unlock();
-                commitIndex = m_log.getCommittedIndex(groupId);
-                latestIndex = m_log.getLatestIndex(groupId);  
-                
-            }
-            else if(method == "DEL")
-            {
-                if(key == "node_active")
-                {
-                    Debug::log("假死");
-                    response = {
-                        {"code", 1 },
-                        {"value", ""}
-                    };
-                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
-                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
-                    return;
-                }
-                else
-                {
-                    Debug::log("处理DEL操作");
+
+                json response;
+
+                if (method == "GET") {
+                    if (key == "fleet_info") {
+                        Debug::log("返回控制信息");
+                        response = m_node_manage.serializeNetworkInfo(leader_id);
+                        response = {
+                            {"code", 1},
+                            {"value", m_node_manage.serializeNetworkInfo(leader_id).dump()}
+                        };
+                        string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                        send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+                        return;
+                    } else if (key == "node_active") {
+                        Debug::log("恢复");
+                        response = {
+                            {"code", 1},
+                            {"value", ""}
+                        };
+                        string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                        send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+                        return;
+                    } else {
+                        Debug::log("处理GET请求");
+                    }
+                } else if (method == "SET") {
+                    Debug::log("处理SET操作");
                     LogEntry entry(key, value, method, hashKey, m_node_manage.commit_num);
 
-                    std::cout<<commitIndex<<std::endl;
-                    std::cout<<latestIndex<<std::endl;        
+                    std::cout << commitIndex << std::endl;
+                    std::cout << latestIndex << std::endl;
                     mtx_append.lock();
                     m_log.append(groupId, entry);
                     mtx_append.unlock();
                     commitIndex = m_log.getCommittedIndex(groupId);
-                    latestIndex = m_log.getLatestIndex(groupId);                      
+                    latestIndex = m_log.getLatestIndex(groupId);
+                } else if (method == "DEL") {
+                    if (key == "node_active") {
+                        Debug::log("假死");
+                        response = {
+                            {"code", 1},
+                            {"value", ""}
+                        };
+                        string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                        send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+                        return;
+                    } else {
+                        Debug::log("处理DEL操作");
+                        LogEntry entry(key, value, method, hashKey, m_node_manage.commit_num);
+
+                        std::cout << commitIndex << std::endl;
+                        std::cout << latestIndex << std::endl;
+                        mtx_append.lock();
+                        m_log.append(groupId, entry);
+                        mtx_append.unlock();
+                        commitIndex = m_log.getCommittedIndex(groupId);
+                        latestIndex = m_log.getLatestIndex(groupId);
+                    }
                 }
+
+                while (m_log.getCommittedIndex(groupId) < latestIndex) {}
+
+                response = m_kv.handleRequest(receiveJson);
+                Debug::log("成功提交并响应客户端");
+                string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+            } catch (const std::exception& e) {
+                Debug::log(std::string("异常: ") + e.what());
+                json errorResponse = {
+                    {"code", -1},
+                    {"value", e.what()}
+                };
+                string serialized_message = errorResponse.dump();  // 序列化 JSON 对象为字符串
+                send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
             }
 
-            while(m_log.getCommittedIndex(groupId) < latestIndex)
-                {
 
-                }
-            response = m_kv.handleRequest(receiveJson);
-            Debug::log("成功提交并响应客户端");
-            string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
-            send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
-            
+
+          
 
 
  
 
-            if(false){//client->leader
 
-            
-                cout<<"get a client ask(leader)"<<endl;
-                while(log.committed_index()<log.latest_index()){
-                
-                }
-                mtx_append.lock();
-                log.append(s,current_term);//提交日志
-                mtx_append.unlock();
-                std::vector<std::string> result = parse_string(s);
-                //cout<<result[0]<<endl;
-                string msg;
-                if(result[0]=="GET")
-                {
-                    cout<<"get a get ask(leader)"<<endl;
-                    msg=to_redis_string(kv.get(result[1]));
-                    if(kv.get(result[1])=="")msg="1\r\n$3\r\nnil\r\n";
-                }
-                else if(result[0]=="DEL")
-                {
-                    int count=0;
-                    for(int k=1;k<=static_cast<int>(result.size())-1;k++){
-                        if(kv.get(result[k])!="")
-                            count++;
-                    }
-                    cout<<"get a del ask(leader)"<<endl;
-                    msg=":"+to_string(count)+"\r\n";
-                }
-                else if(result[0]=="SET")
-                {
-                    cout<<"get a set ask(leader)"<<endl;
-                    msg="+OK\r\n";
-                }
-                //while(log.committed_index()<log.latest_index()){
-                    //请求被提交了才返回信息给客户端
-                //}
-                int ret = send(fd, msg.c_str(), msg.size(), 0);
-                if(ret!=-1)cout<<id<<" 成功响应客户端(leader)"<<": "<<msg<<endl;
-            }
         }
     }
 }

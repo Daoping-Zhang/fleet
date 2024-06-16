@@ -964,6 +964,23 @@ void Node::work(int fd)
             uint64_t hashKey = receiveJson["hashKey"];
             int groupId = receiveJson["groupId"];
 
+            json response;
+
+            int leader_id = m_node_manage.getLeaderIdByGroup(groupId);
+
+            if (std::find(m_ids.begin(), m_ids.end(), leader_id) == m_ids.end())
+            {
+                response = {
+                    {"code", -2},
+                    {"value", ""}
+                };
+
+                string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+                return;
+
+            }
+
             if(state == DOWN)
             {
                 if(method != "GET" && key!= "node_active")
@@ -978,7 +995,7 @@ void Node::work(int fd)
             uint64_t latestIndex = m_log.getLatestIndex(groupId);  
             mtx_append.unlock();
 
-            json response;
+            
 
             if(method == "GET")
             {
@@ -1512,6 +1529,7 @@ void Node::removeOldIdData(int oldId) {
 
 // 调用 updateIds 方法来更新 ID 列表
 void Node::checkAndUpdateIds() {
+    Debug::log("checkAndUpdateIds");
     std::vector<int> newIds = m_node_manage.getIdsBySockaddr(servaddr); // 获取新的 ID 列表
     updateIds(newIds); // 更新 ID 列表
 }
@@ -1599,5 +1617,5 @@ bool Node::is_fd_active(int fd, sockaddr_in addr)
         }
     }
 
-    return false;    
+    return true;    
 }

@@ -118,12 +118,15 @@ func updateFleet() {
 	nodeLock.Lock()
 	currentNodesMap := make(map[string]*Node)
 	for _, node := range nodes {
+		node.IsUp = false
 		currentNodesMap[node.Address] = node
 	}
 
 	for _, node := range fleetMsg.Nodes {
-		if _, exists := currentNodesMap[node.IP]; !exists {
-			// If node exists locally, respect local status
+		if currnode, exists := currentNodesMap[node.IP]; exists {
+			// only nodes reported by backend are online
+			currnode.IsUp = true
+		} else {
 			// If node does not exist locally, add it
 			newNode := Node{Address: node.IP, IsUp: true}
 			currentNodesMap[node.IP] = &newNode

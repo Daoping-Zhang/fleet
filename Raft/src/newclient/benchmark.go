@@ -171,10 +171,10 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 			ok, _ := JsonSendReceive(req, node)
 			if ok {
 				result.Success = true
+				nodeLock.Lock()
+				node.IsUp = false
+				nodeLock.Unlock()	
 			}
-			nodeLock.Lock()
-			node.IsUp = false
-			nodeLock.Unlock()
 			slog.Info("Poweroff command", `node`, node)
 		case POWERON:
 			node := getFirstDeadNode()
@@ -186,10 +186,10 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 			ok, _ := JsonSendReceive(req, node)
 			if ok {
 				result.Success = true
+				nodeLock.Lock()
+				node.IsUp = true
+				nodeLock.Unlock()
 			}
-			nodeLock.Lock()
-			node.IsUp = true
-			nodeLock.Unlock()
 			slog.Info("Poweron command", `node`, node)
 		}
 		result.Latency = time.Since(start)

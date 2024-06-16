@@ -103,7 +103,9 @@ func getGroupLeader(id int) *Node {
 func updateFleet() {
 	// Cannot use SchedSendReceive here, fleet info has not been updated yet
 	req := ClientRequest{Key: "fleet_info", Method: GET.String()}
+	groupLock.RLock()
 	ok, msg := JsonSendReceive(req, fleetLeader)
+	groupLock.RUnlock()
 	if !ok {
 		slog.Error("Error getting fleet info", "msg", msg)
 		return

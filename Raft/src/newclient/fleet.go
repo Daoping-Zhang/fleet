@@ -30,7 +30,7 @@ type fleetUpdateMsg struct {
 	} `json:"groups"`
 }
 
-var nodes []Node = []Node{
+var nodes []*Node = []*Node{
 	{
 		Address: "192.168.0.1:1001",
 		IsUp:    true,
@@ -48,15 +48,15 @@ var nodes []Node = []Node{
 // Find the node with the given id.
 // A node may have multiple IDs
 var nodeID = map[int]*Node{
-	1: &nodes[0],
-	4: &nodes[0],
-	7: &nodes[0],
-	2: &nodes[1],
-	5: &nodes[1],
-	8: &nodes[1],
-	3: &nodes[2],
-	6: &nodes[2],
-	9: &nodes[2],
+	1: nodes[0],
+	4: nodes[0],
+	7: nodes[0],
+	2: nodes[1],
+	5: nodes[1],
+	8: nodes[1],
+	3: nodes[2],
+	6: nodes[2],
+	9: nodes[2],
 }
 
 var groups []Group = []Group{
@@ -118,7 +118,7 @@ func updateFleet() {
 	nodeLock.Lock()
 	currentNodesMap := make(map[string]*Node)
 	for _, node := range nodes {
-		currentNodesMap[node.Address] = &node
+		currentNodesMap[node.Address] = node
 	}
 
 	for _, node := range fleetMsg.Nodes {
@@ -131,11 +131,11 @@ func updateFleet() {
 	}
 
 	// Rebuild the nodes slice
-	nodes = []Node{}
+	nodes = []*Node{}
 	nodeID = make(map[int]*Node)
 	for _, nodeMsg := range fleetMsg.Nodes {
 		node := currentNodesMap[nodeMsg.IP]
-		nodes = append(nodes, *node)
+		nodes = append(nodes, node)
 		for _, id := range nodeMsg.ID {
 			nodeID[id] = node
 		}
@@ -174,7 +174,7 @@ func getFirstAliveNode() *Node {
 	defer nodeLock.RUnlock()
 	for _, node := range nodes {
 		if node.IsUp {
-			return &node
+			return node
 		}
 	}
 	return nil
@@ -185,7 +185,7 @@ func getFirstDeadNode() *Node {
 	defer nodeLock.RUnlock()
 	for _, node := range nodes {
 		if !node.IsUp {
-			return &node
+			return node
 		}
 	}
 	return nil

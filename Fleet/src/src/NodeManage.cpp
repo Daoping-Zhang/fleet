@@ -3,6 +3,7 @@
 #include <cstring>
 #include <set>
 #include <algorithm> 
+#include <sstream>  // Include this for std::stringstream
 
 
 void NodeManage::addMapping(int id, const sockaddr_in& sockaddr) {

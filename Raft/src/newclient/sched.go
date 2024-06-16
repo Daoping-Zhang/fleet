@@ -18,7 +18,7 @@ func getHashGroup(key string) int {
 	hash := hash(key)
 	groupLock.RLock()
 	defer groupLock.RUnlock()
-	return int(hash % uint64(len(groups)))
+	return int(hash%uint64(len(groups))) + 1 // Group # starts from 1
 }
 
 func SchedSendReceive(operation Command, content string) (success bool, msg string) {

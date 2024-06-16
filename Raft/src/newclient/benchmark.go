@@ -103,8 +103,8 @@ func executeTest(testName string) {
 	start := time.Now()
 	for _, action := range test.Actions {
 		elapsed := time.Since(start)
-		if elapsed < time.Microsecond*time.Duration(action.Time) {
-			time.Sleep(time.Microsecond*time.Duration(action.Time) - elapsed)
+		if elapsed < time.Millisecond*time.Duration(action.Time) {
+			time.Sleep(time.Millisecond*time.Duration(action.Time) - elapsed)
 		}
 		for i := 0; i < action.Repeat; i++ {
 			jobs <- CommandFromString(action.Action)
@@ -129,6 +129,7 @@ func executeTest(testName string) {
 
 func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 	for job := range jobs {
+		slog.Info("Worker took job", `job`, job)
 		result := TestActionResult{Action: job}
 		start := time.Now()
 	JOBSWITCH:
@@ -163,7 +164,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 		case POWEROFF: // POWEROFF and POWERON doesn't follow traditional per-group scheduling
 			node := getFirstAliveNode() // TODO: Use random alive node?
 			if node == nil {
-				slog.Error("No alive node found")
+				slog.Error("Trying poweroff command, no alive node found")
 				break JOBSWITCH
 			}
 			req := ClientRequest{Key: "node_active", Method: DEL.String()}
@@ -178,7 +179,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 		case POWERON:
 			node := getFirstDeadNode()
 			if node == nil {
-				slog.Error("No dead node found")
+				slog.Error("Trying poweron command, no dead node found")
 				break JOBSWITCH
 			}
 			req := ClientRequest{Key: "node_active", Method: GET.String()}

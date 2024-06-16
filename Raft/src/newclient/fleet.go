@@ -96,6 +96,7 @@ func getGroupLeader(id int) *Node {
 		}
 	}
 	groupLock.RUnlock()
+	slog.Warn("No group leader found", `id`, id)
 	return nil
 }
 

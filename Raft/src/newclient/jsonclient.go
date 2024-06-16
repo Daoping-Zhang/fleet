@@ -17,8 +17,8 @@ type ClientRequest struct {
 }
 
 type ClientResponse struct {
-	Code    int    `json:"code"`    // Positive for success, negative for failure; for DEL, the number of keys deleted
-	Message string `json:"message"` // Response message, only valid for GET
+	Code    int    `json:"code"`  // Positive for success, negative for failure; for DEL, the number of keys deleted
+	Message string `json:"value"` // Response message, only valid for GET
 }
 
 // Similar with SendReceive in client.go, but in new JSON format;
@@ -53,7 +53,7 @@ func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 	var resp ClientResponse
 	err = respReader.Decode(&resp)
 	if err != nil {
-		slog.Error("Error receiving response","err", err)
+		slog.Error("Error receiving response", "err", err)
 		return false, err.Error()
 	}
 

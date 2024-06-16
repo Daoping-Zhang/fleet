@@ -1024,10 +1024,10 @@ void Node::work(int fd)
                 {
                     Debug::log("返回控制信息");
                     response = m_node_manage.serializeNetworkInfo(leader_id);
-                    m_node_manage.printNetworkInfo(leader_id);
+                    m_node_manage.serializeNetworkInfo(leader_id);
                     response = {
                         {"code", 1 },
-                        {"value", m_node_manage.printNetworkInfo(leader_id).dump()}
+                        {"value", m_node_manage.serializeNetworkInfo(leader_id).dump()}
                     };
                     string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
                     send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串

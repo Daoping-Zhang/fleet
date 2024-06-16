@@ -147,7 +147,7 @@ func parseUpdateFleetResponse(resp string) *fleetUpdateMsg {
 	var fleetMsg fleetUpdateMsg
 	err := json.Unmarshal([]byte(resp), &fleetMsg)
 	if err != nil {
-		slog.Error("Error unmarshalling fleet info", "msg", err)
+		slog.Error("Error unmarshalling fleet info", `msg`, err, `resp`, resp)
 		return nil
 	}
 	return &fleetMsg

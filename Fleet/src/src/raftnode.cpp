@@ -148,6 +148,14 @@ void Node::Run() {
 
             LeaderLoop();
         }
+        else if (state == DOWN)
+        {
+            cout<<"down"<<endl;
+            while(state == DOWN)
+            {
+
+            }
+        }
     }
 }
 
@@ -422,7 +430,7 @@ void Node::work(int fd)
     }
 
 
-    if(message_recv.find("type") != message_recv.end()){
+    if(message_recv.find("type") != message_recv.end() && state!= DOWN){
         if(message_recv["type"]=="requestvote"){//请求投票类型，candidtae->follwer
             if(state==FOLLOWER)
             {
@@ -480,14 +488,18 @@ void Node::work(int fd)
 
                 initializeNewId(m_ids[0], true);
                 m_recovery = false;
+            }else
+            {
+                Debug::log("同步node Manage");
+
+                checkAndUpdateIds();
+
+                generateGroupsMap(); //必须先更新m_ids;
+
+                m_node_manage.printAllMappings();
+
             }
-            Debug::log("同步node Manage");
-
-            checkAndUpdateIds();
-
-            generateGroupsMap(); //必须先更新m_ids;
-
-            m_node_manage.printAllMappings();
+ 
 
             recv_heartbeat = true;
           
@@ -609,6 +621,10 @@ void Node::work(int fd)
 
             message["data"] = serializedSend_data;
 
+            json node_index_map = m_log.serializeLatestIndexesByNode(group_id);
+            message["node_index_map"] =  node_index_map.dump();                   
+
+
    
 
             int send_id = recv_info.m_id;
@@ -627,6 +643,14 @@ void Node::work(int fd)
             InitializeData recv_info;
             
             recv_info=recv_info.deserialize(message_recv["data"]);
+
+            string s = message_recv["node_index_map"];
+
+            json node_index_map = json::parse(s.c_str());
+
+
+            m_log.deserializeLatestIndexesByNode(recv_info.group_id,node_index_map );
+
 
             int group_id = recv_info.group_id;
 
@@ -712,71 +736,108 @@ void Node::work(int fd)
             recv_info=recv_info.deserialize(message_recv["data"]);
             uint64_t commitIndex = m_log.getCommittedIndex(recv_info.group_id);
             uint64_t latestIndex = m_log.getLatestIndex(recv_info.group_id);
-            
+
+            string s = message_recv["node_index_map"];
+
+            json node_index_map = json::parse(s.c_str());
 
 
-            if(commitIndex < recv_info.commitIndex)
-            {
-                Debug::log("同步提交");
+            m_log.deserializeLatestIndexesByNode(recv_info.group_id,node_index_map );
 
-                executeEntries(recv_info.group_id, commitIndex, std::min(recv_info.commitIndex, latestIndex), m_kv, m_log);
-            }
+
+
 
             if(latestIndex <= recv_info.latestIndex)
             {
-                FleetGroupReceiveData send_data;
-                send_data.group_id = recv_info.group_id;    
-
-                std::vector<int> group = m_node_manage.getMembersByGroupId(recv_info.group_id);
-
-                Debug::log("收到小组长提交的日志");
-                std::vector<LogEntry> uncommittedEntries = m_log.deserializeLogEntries(recv_info.entriesSerialized);
-                for(LogEntry entry : uncommittedEntries)
+                if(latestIndex < m_log.latest_indexes_by_node[recv_info.group_id][m_ids[0]])
                 {
-                    m_log.append(recv_info.group_id, entry);
-                    Debug::log("添加日志");
-                    std::cout<<recv_info.group_id<<std::endl;
-                }
-
-                send_data.latestIndex = recv_info.latestIndex;
-
-                int vote_num = 0;
-
-                for (int id : m_ids)
+                    Debug::error("日志出错");
+                }else
                 {
-
-                    
-                    if (std::find(group.begin(), group.end(), id) != group.end())
+                    uint64_t det_index = latestIndex - m_log.latest_indexes_by_node[recv_info.group_id][m_ids[0]];
+                    if(det_index > 0)
                     {
-                        vote_num++;
-                        send_data.ids.push_back(id);
+                        Debug::log("leader日志落后");
                     }
-                    
-                }
+                    FleetGroupReceiveData send_data;
+                    send_data.group_id = recv_info.group_id;    
 
+                    std::vector<int> group = m_node_manage.getMembersByGroupId(recv_info.group_id);
+
+                    Debug::log("收到小组长提交的日志");
+                    std::vector<LogEntry> uncommittedEntries = m_log.deserializeLogEntries(recv_info.entriesSerialized);
+
+                    mtx_append.lock();
+                    for(LogEntry entry : uncommittedEntries)
+                    {
+                        if(det_index>0)
+                        {
+                            det_index--;
+                            continue;
+                        }
+                        m_log.append(recv_info.group_id, entry);
+                        Debug::log("添加日志");
+                        std::cout<<recv_info.group_id<<std::endl;
+                    }
+
+                    uint64_t now_latestIndex = m_log.getLatestIndex(recv_info.group_id);
+                    mtx_append.unlock();
+
+
+
+                    
+
+                    send_data.latestIndex = now_latestIndex;
+
+                    int vote_num = 0;
+
+                    for (int id : m_ids)
+                    {
 
                         
-                send_data.vote_num = vote_num;
-                send_data.success = true;
+                        if (std::find(group.begin(), group.end(), id) != group.end())
+                        {
+                            vote_num++;
+                            send_data.ids.push_back(id);
+                        }
+                        
+                    }
 
 
-                json message;
-                message["type"] = "fleetGroupReceiveData";
-
-                std::string serializedSend_data = send_data.serialize();
-                message["data"] = serializedSend_data;
+                            
+                    send_data.vote_num = vote_num;
+                    send_data.success = true;
 
 
-                int send_id = m_node_manage.getLeaderIdByGroup(recv_info.group_id);
-                
-                sockaddr_in addr =  m_node_manage.getSockaddrById(send_id);
+                    json message;
+                    message["type"] = "fleetGroupReceiveData";
 
-                sendmsg(m_addr_fd_map[addr], addr ,message);
-                std::cout<<"send_id: "<<send_id<<std::endl;
-                printAddressInfo(addr);
+                    std::string serializedSend_data = send_data.serialize();
+                    message["data"] = serializedSend_data;
+
+
+                    int send_id = m_node_manage.getLeaderIdByGroup(recv_info.group_id);
+                    
+                    sockaddr_in addr =  m_node_manage.getSockaddrById(send_id);
+
+                    sendmsg(m_addr_fd_map[addr], addr ,message);
+                    std::cout<<"send_id: "<<send_id<<std::endl;
+                    printAddressInfo(addr);                    
+
+                }
+
 
                       
             }
+
+
+
+                if(commitIndex < recv_info.commitIndex)
+                {
+                    Debug::log("同步提交");
+
+                    executeEntries(recv_info.group_id, commitIndex, std::min(recv_info.commitIndex, latestIndex), m_kv, m_log);
+                }            
 
             
 
@@ -825,6 +886,9 @@ void Node::work(int fd)
                         m_log.commit(group_id, latestIndex);
                         Debug::log("成功提交");
                         
+                    }else
+                    {
+                        Debug::log("已经处理");
                     }
 
                     mtx_append.unlock();
@@ -834,9 +898,9 @@ void Node::work(int fd)
 
                     
 
-                    Debug::log("成功提交");
                     
-                    m_log.commit(group_id, latestIndex);
+                    
+                   
                 }
                 
             }            
@@ -900,6 +964,14 @@ void Node::work(int fd)
             uint64_t hashKey = receiveJson["hashKey"];
             int groupId = receiveJson["groupId"];
 
+            if(state == DOWN)
+            {
+                if(method != "GET" && key!= "node_active")
+                {
+                    return;
+                }
+            }
+
             mtx_append.lock();
             uint64_t commitIndex = m_log.getCommittedIndex(groupId);
             uint64_t pre_latestIndex;
@@ -913,8 +985,11 @@ void Node::work(int fd)
                 if(key == "fleet_info")
                 {
                     Debug::log("返回控制信息");
-                    response = m_node_manage.serializeNetworkInfo(leader_id);
-                    m_node_manage.printNetworkInfo(leader_id);
+                    response = 
+                    {
+                        {"code", 1},
+                        {"value", m_node_manage.serializeNetworkInfo(leader_id).dump()}
+                    };
                     string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
                     send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
                     return;
@@ -923,6 +998,11 @@ void Node::work(int fd)
                 else if (key == "node_active")
                 {
                     Debug::log("恢复");
+                    state = FOLLOWER;
+                    response = {
+                            {"code", 1},
+                            {"value", ""}
+                    };
                     string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
                     send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
                     return;
@@ -947,11 +1027,7 @@ void Node::work(int fd)
                
             }
             else if(method == "SET")
-            {
-
-                
-    
-              
+            {        
                 Debug::log("处理SET操作");
                 LogEntry entry(key, value, method, hashKey, m_node_manage.commit_num);
 
@@ -964,6 +1040,8 @@ void Node::work(int fd)
                 latestIndex = m_log.getLatestIndex(groupId);  
 
                 mtx_append.unlock();
+
+                
      
                 
                 
@@ -973,6 +1051,12 @@ void Node::work(int fd)
                 if(key == "node_active")
                 {
                     Debug::log("假死");
+
+                    state = DOWN;
+                    response = {
+                            {"code", 1},
+                            {"value", ""}
+                    };
                     string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
                     send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
                     return;
@@ -1297,7 +1381,10 @@ void Node::sendGroupLog()
 
                         json message;
                         message["type"] = "fleetGroupSendData";
-                        message["data"] = serializedSend_data;                        
+                        message["data"] = serializedSend_data;
+
+                        json node_index_map = m_log.serializeLatestIndexesByNode(groupId);
+                        message["node_index_map"] =  node_index_map.dump();                   
 
                         sockaddr_in addr = m_node_manage.getSockaddrById(id);
 
@@ -1512,5 +1599,5 @@ bool Node::is_fd_active(int fd, sockaddr_in addr)
         }
     }
 
-    return true;    
+    return false;    
 }

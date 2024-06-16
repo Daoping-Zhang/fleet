@@ -21,7 +21,7 @@ public:
     std::unordered_map<int, uint64_t> latest_index;                    // 每个组的最新日志索引
     std::unordered_map<int, uint64_t> committed_index;                 // 每个组的已提交日志索引
     std::unordered_map<int, std::unordered_map<uint64_t, int>> vote_count; // 每个组中每个日志条目的投票计数
-    std::unordered_map<int, std::unordered_map<uint64_t, std::unordered_map<int, uint64_t>>> latest_indexes_by_node; // 记录每个节点的最新索引
+    std::unordered_map<int, std::unordered_map<int, uint64_t>> latest_indexes_by_node;
 
     void append(int groupId, const LogEntry& entry) {
         logs[groupId].push_back(entry);
@@ -49,21 +49,38 @@ public:
         // 获取该节点的最新日志索引
         uint64_t nodeLatestIndex = 0;
         if (latest_indexes_by_node[groupId].find(nodeId) != latest_indexes_by_node[groupId].end()) {
-            nodeLatestIndex = latest_indexes_by_node[groupId][nodeId].begin()->second;
+            nodeLatestIndex = latest_indexes_by_node[groupId][nodeId];
         }
+
+        // 调试输出：打印节点的最新日志索引
+        std::cout << "Node " << nodeId << " latest index: " << nodeLatestIndex << std::endl;
 
         // 获取最新提交的索引和最新的日志索引
         uint64_t latestIndex = latest_index[groupId];
 
+        // 调试输出：打印最新的日志索引
+        std::cout << "Latest index for group " << groupId << ": " << latestIndex << std::endl;
+
         // 从节点的最新索引到最新的日志索引之间的所有条目都是未提交的条目
-        for (uint64_t i = nodeLatestIndex ; i < latestIndex; ++i) {
+        for (uint64_t i = nodeLatestIndex; i < latestIndex; ++i) {
             if (i < logs[groupId].size()) {
                 uncommittedEntries.push_back(logs[groupId][i]);
+
+                // 调试输出：打印每个未提交的日志条目
+                const LogEntry& entry = logs[groupId][i];
+                std::cout << "Uncommitted entry at index " << i << ": {"
+                        << "key: " << entry.key << ", "
+                        << "value: " << entry.value << ", "
+                        << "method: " << entry.method << ", "
+                        << "hashKey: " << entry.hashKey << ", "
+                        << "term: " << entry.term << "}" << std::endl;
             }
         }
 
         return uncommittedEntries;
     }
+
+
 
     std::string serializeLogEntries(const std::vector<LogEntry>& entries) {
         json j = json::array();
@@ -90,21 +107,13 @@ public:
 
     // 增加投票数
     void addVote(int groupId, uint64_t index, int nodeId) {
-
-        if(latest_indexes_by_node[groupId][index][nodeId] < index)
-        {
+        if (latest_indexes_by_node[groupId][nodeId] < index){
             vote_count[groupId][index]++;
-            latest_indexes_by_node[groupId][index][nodeId] = index;
+            latest_indexes_by_node[groupId][nodeId] = index;
             printf("成功投票，当前票数%d\n", vote_count[groupId][index]);
-        }
-
-        else
-        {
+        } else {
             printf("重复投票不计算\n");
         }
-
-        
-       
     }
 
     // 检查是否有未提交的日志条目并发送
@@ -170,6 +179,28 @@ void deserializeGroupLogs(int groupId, const std::string& data) {
         std::cerr << "JSON parse error: " << e.what() << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Error deserializing group logs: " << e.what() << std::endl;
+    }
+}
+// 序列化函数
+json serializeLatestIndexesByNode(int groupId) {
+    json j;
+    if (latest_indexes_by_node.find(groupId) != latest_indexes_by_node.end()) {
+        for (const auto& entry : latest_indexes_by_node[groupId]) {
+            int nodeId = entry.first;
+            uint64_t index = entry.second;
+            j[std::to_string(nodeId)] = index;
+        }
+    }
+    return j;
+}
+
+// 反序列化函数
+void deserializeLatestIndexesByNode(int groupId, const json& j) {
+    latest_indexes_by_node[groupId].clear();
+    for (auto& entry : j.items()) {
+        int nodeId = std::stoi(entry.key());
+        uint64_t index = entry.value().get<uint64_t>();
+        latest_indexes_by_node[groupId][nodeId] = index;
     }
 }
 

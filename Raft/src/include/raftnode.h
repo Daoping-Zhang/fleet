@@ -34,7 +34,8 @@
 enum NodeState {
     FOLLOWER,
     CANDIDATE,
-    LEADER
+    LEADER,
+    DOWN
 };//节点的状态，包括 FOLLOWER、CANDIDATE 和 LEADER 三种状态。
 
 

@@ -146,6 +146,8 @@ void Node::Run() {
         else if (state== LEADER) {
             cout<<"inLeader"<<endl;
 
+            leader_id = id;
+
             LeaderLoop();
         }
         else if (state == DOWN)
@@ -171,7 +173,15 @@ void Node::FollowerLoop() {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(7*delay1));
         //检验
-        
+        if(leader_id != 0)
+        {
+            sockaddr_in addr = m_node_manage.getSockaddrById(leader_id);
+            if(is_fd_active(m_addr_fd_map[addr],addr))
+            {
+                 recv_heartbeat = true;
+            }
+        }
+
 
         if(recv_heartbeat==false)//如果一个周期结束了还没有收到心跳，那么转换为竞选者
         {
@@ -968,6 +978,55 @@ void Node::work(int fd)
 
             int leader_id = m_node_manage.getLeaderIdByGroup(groupId);
 
+            if(method == "GET"  )
+            {
+                if( key == "fleet_info")
+                {
+                  Debug::log("返回控制信息");
+                  m_node_manage.printNetworkInfo(0);
+
+                    response =
+                    {
+                        {"code", 1},
+                        {"value", m_node_manage.serializeNetworkInfo(0).dump()}
+                    };
+                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+                    return;
+                }
+                else if (key == "node_active")
+                {
+                    Debug::log("恢复");
+                    //state = FOLLOWER;
+                    response = {
+                            {"code", 1},
+                            {"value", ""}
+                    };
+                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+                    return;
+                }
+                               
+
+            }
+
+            if(method == "DEL")
+            {
+                if(key == "node_active")
+                {
+                    Debug::log("假死");
+
+                    //state = DOWN;
+                    response = {
+                            {"code", 1},
+                            {"value", ""}
+                    };
+                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+                    return;
+                }                
+            }
+
             if (std::find(m_ids.begin(), m_ids.end(), leader_id) == m_ids.end())
             {
                 response = {
@@ -999,48 +1058,16 @@ void Node::work(int fd)
 
             if(method == "GET")
             {
-                if(key == "fleet_info")
-                {
-                    Debug::log("返回控制信息");
-                    response = 
+                Debug::log("处理GET请求");
+                while(m_log.getCommittedIndex(groupId) < latestIndex)
                     {
-                        {"code", 1},
-                        {"value", m_node_manage.serializeNetworkInfo(leader_id).dump()}
-                    };
-                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
-                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
-                    return;
-                }
 
-                else if (key == "node_active")
-                {
-                    Debug::log("恢复");
-                    state = FOLLOWER;
-                    response = {
-                            {"code", 1},
-                            {"value", ""}
-                    };
-                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
-                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
-                    return;
-                }
-                
-
-                else
-                {
-                    Debug::log("处理GET请求");
-                    while(m_log.getCommittedIndex(groupId) < latestIndex)
-                        {
-
-                        }
-                    response = m_kv.handleRequest(receiveJson);
-                    Debug::log("成功提交并响应客户端");
-                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
-                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
-                    return;
-                                        
-                    
-                }
+                    }
+                response = m_kv.handleRequest(receiveJson);
+                Debug::log("成功提交并响应客户端");
+                string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
+                send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
+                return;                                                 
                
             }
             else if(method == "SET")
@@ -1065,34 +1092,20 @@ void Node::work(int fd)
             }
             else if(method == "DEL")
             {
-                if(key == "node_active")
-                {
-                    Debug::log("假死");
 
-                    state = DOWN;
-                    response = {
-                            {"code", 1},
-                            {"value", ""}
-                    };
-                    string serialized_message = response.dump();  // 序列化 JSON 对象为字符串
-                    send(fd, serialized_message.c_str(), serialized_message.size(), 0);  // 发送 JSON 字符串
-                    return;
-                }
-                else
-                {
-                    Debug::log("处理DEL操作");
-                    LogEntry entry(key, value, method, hashKey, m_node_manage.commit_num);
+                Debug::log("处理DEL操作");
+                LogEntry entry(key, value, method, hashKey, m_node_manage.commit_num);
 
       
-                    mtx_append.lock();
+                mtx_append.lock();
 
-                    pre_latestIndex = m_log.getLatestIndex(groupId); 
-                    m_log.append(groupId, entry);
-                    latestIndex = m_log.getLatestIndex(groupId);  
+                pre_latestIndex = m_log.getLatestIndex(groupId); 
+                m_log.append(groupId, entry);
+                latestIndex = m_log.getLatestIndex(groupId);  
                     
-                    mtx_append.unlock();
+                mtx_append.unlock();
                        
-                }
+                
             }
 
             while(m_log.getCommittedIndex(groupId) < latestIndex)
@@ -1366,7 +1379,7 @@ void Node::sendGroupLog()
         {
             uint64_t commitIndex = m_log.getCommittedIndex(groupId);
             uint64_t latestIndex = m_log.getLatestIndex(groupId);
-            FleetGroupSendData send_data(groupId, latestIndex, commitIndex, "");
+            
 
             if (commitIndex < latestIndex)
             {
@@ -1391,7 +1404,11 @@ void Node::sendGroupLog()
                     }
                     else
                     {
-                        std::vector<LogEntry> uncommittedEntries = m_log.getUncommittedEntries(groupId, id);
+                        UncommittedEntriesResult costom_entries = m_log.getUncommittedEntries(groupId, id , 4);
+                        std::vector<LogEntry> uncommittedEntries = costom_entries.entries;
+
+                        FleetGroupSendData send_data(groupId, m_log.latest_indexes_by_node[groupId][id] + costom_entries.processedCount, m_log.latest_indexes_by_node[groupId][id], "");
+
                         std::string serializedEntries = m_log.serializeLogEntries(uncommittedEntries);
                         send_data.entriesSerialized = serializedEntries;
                         std::string serializedSend_data = send_data.serialize();

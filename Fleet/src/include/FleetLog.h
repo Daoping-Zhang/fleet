@@ -2,7 +2,11 @@
 #include <vector>
 #include <string>
 #include <nlohmann/json.hpp>
+
 using json = nlohmann::json;
+
+
+
 
 struct LogEntry {
     std::string key;
@@ -13,6 +17,11 @@ struct LogEntry {
 
     LogEntry(std::string k, std::string v, std::string m, uint64_t h, int t)
         : key(std::move(k)), value(std::move(v)), method(std::move(m)), hashKey(h), term(t) {}
+};
+
+struct UncommittedEntriesResult {
+    std::vector<LogEntry> entries;
+    int processedCount;
 };
 
 class FleetLog {
@@ -43,42 +52,42 @@ public:
         return committed_index[groupId];
     }
 
-    std::vector<LogEntry> getUncommittedEntries(int groupId, int nodeId) {
-        std::vector<LogEntry> uncommittedEntries;
+    UncommittedEntriesResult getUncommittedEntries(int groupId, int nodeId, int maxEntries) {
 
-        // 获取该节点的最新日志索引
-        uint64_t nodeLatestIndex = 0;
-        if (latest_indexes_by_node[groupId].find(nodeId) != latest_indexes_by_node[groupId].end()) {
-            nodeLatestIndex = latest_indexes_by_node[groupId][nodeId];
-        }
+    UncommittedEntriesResult result;
+    uint64_t nodeLatestIndex = 0;
 
-        // 调试输出：打印节点的最新日志索引
-        std::cout << "Node " << nodeId << " latest index: " << nodeLatestIndex << std::endl;
-
-        // 获取最新提交的索引和最新的日志索引
-        uint64_t latestIndex = latest_index[groupId];
-
-        // 调试输出：打印最新的日志索引
-        std::cout << "Latest index for group " << groupId << ": " << latestIndex << std::endl;
-
-        // 从节点的最新索引到最新的日志索引之间的所有条目都是未提交的条目
-        for (uint64_t i = nodeLatestIndex; i < latestIndex; ++i) {
-            if (i < logs[groupId].size()) {
-                uncommittedEntries.push_back(logs[groupId][i]);
-
-                // 调试输出：打印每个未提交的日志条目
-                const LogEntry& entry = logs[groupId][i];
-                std::cout << "Uncommitted entry at index " << i << ": {"
-                        << "key: " << entry.key << ", "
-                        << "value: " << entry.value << ", "
-                        << "method: " << entry.method << ", "
-                        << "hashKey: " << entry.hashKey << ", "
-                        << "term: " << entry.term << "}" << std::endl;
-            }
-        }
-
-        return uncommittedEntries;
+    // 查找节点的最新索引
+    if (latest_indexes_by_node[groupId].find(nodeId) != latest_indexes_by_node[groupId].end()) {
+        nodeLatestIndex = latest_indexes_by_node[groupId][nodeId];
     }
+    std::cout << "Node " << nodeId << " latest index: " << nodeLatestIndex << std::endl;
+
+    uint64_t latestIndex = latest_index[groupId];
+    std::cout << "Latest index for group " << groupId << ": " << latestIndex << std::endl;
+
+    for (uint64_t i = nodeLatestIndex; i < latestIndex && result.processedCount < maxEntries; ++i) {
+        if (i < logs[groupId].size()) {
+            
+            result.entries.push_back(logs[groupId][i]);
+
+            result.processedCount++;
+
+            const LogEntry& entry = logs[groupId][i];
+            std::cout << "Uncommitted entry at index " << i << ": {"
+                      << "key: " << entry.key << ", "
+                      << "value: " << entry.value << ", "
+                      << "method: " << entry.method << ", "
+                      << "hashKey: " << entry.hashKey << ", "
+                      << "term: " << entry.term << "}" << std::endl;
+        }else
+        {
+            std::cout<< "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+        }
+    }
+
+    return result;
+}
 
 
 

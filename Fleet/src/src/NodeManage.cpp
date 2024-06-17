@@ -233,6 +233,8 @@ sockaddr_in NodeManage::findLeastUsedAddress(const std::vector<int>& activeIds) 
         leastUsedAddr.sin_family = AF_UNSPEC;
     }
 
+    printAllMappings();
+
     return leastUsedAddr;
 }
 
@@ -266,10 +268,14 @@ json NodeManage::serializeNetworkInfo(int leader_id) const {
     // 构造 groups 部分
     for (const auto& group : groups) {
         json groupInfo;
-        groupInfo["id"] = group.first;
-        groupInfo["leader"] = group.second.leaderId;
-        groupInfo["nodes"] = group.second.memberIds;
-        groupArray.push_back(groupInfo);
+        if(group.first != 0)
+        {
+            groupInfo["id"] = group.first;
+            groupInfo["leader"] = group.second.leaderId;
+            groupInfo["nodes"] = group.second.memberIds;
+            groupArray.push_back(groupInfo);
+        }
+
     }
 
     response["nodes"] = nodeArray;

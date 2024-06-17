@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+
+	"github.com/rs/cors"
 )
 
 //go:embed frontend/dist/*
@@ -57,7 +59,14 @@ func serve() {
 		}
 	})
 	slog.Info("Serving at http://localhost:8080")
-	http.ListenAndServe(":8080", mux)
+	c := cors.New(cors.Options{
+		AllowedOrigins:   []string{"http://localhost:5173"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+		AllowCredentials: true,
+	})
+	handler := c.Handler(mux)
+	http.ListenAndServe(":8080", handler)
 }
 
 func getNodes(w http.ResponseWriter, _ *http.Request) {

@@ -4,6 +4,8 @@ import { Line } from 'vue-chartjs'
 import { Chart as ChartJS, Title, Tooltip, Legend, LineElement, PointElement, LinearScale, CategoryScale } from 'chart.js'
 import { NH1, NH2, NIcon, NSelect, NButton, NInput } from 'naive-ui'
 
+const baseURL = import.meta.env.VITE_API_BASE_URL;
+
 // Register chart components
 ChartJS.register(Title, Tooltip, Legend, LineElement, PointElement, LinearScale, CategoryScale)
 
@@ -131,6 +133,7 @@ const updateCharts = () => {
   taskNumData.value.datasets[0].data.push(testResult.value.submittedJobs);
   taskNumData.value.datasets[1].data.push(testResult.value.completeJobs);
   taskNumData.value.datasets[2].data.push(testResult.value.successJobs);
+  console.log(`Updating chart, last second latency ${lastSecondLatency}, submitted/complete/success jobs ${testResult.value.submittedJobs}/${testResult.value.completeJobs}/${testResult.value.successJobs}`)
 };
 
 // Watch for updates in testResult and update charts accordingly
@@ -141,7 +144,7 @@ const fetchNodeStatus = async () => {
     return; // No need to fetch when fleet leader is not set!
   }
   try {
-    const response = await fetch('/api/hosts');
+    const response = await fetch(baseURL + '/api/hosts');
     if (response.ok) {
       const data: Node[] = await response.json();
       nodes.value = data;
@@ -157,7 +160,7 @@ const fetchNodeStatus = async () => {
 // Function to fetch test cases from the API
 const fetchTestCases = async () => {
   try {
-    const response = await fetch('/api/tests');
+    const response = await fetch(baseURL + '/api/tests');
     if (response.ok) {
       const data: string[] = await response.json();
       testCases.value = data.map(test => ({ label: test, value: test }));
@@ -172,7 +175,7 @@ const fetchTestCases = async () => {
 
 const setFleetLeaderAddress = async () => {
   try {
-    const response = await fetch('/api/fleet-leader', {
+    const response = await fetch(baseURL + '/api/fleet-leader', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -202,7 +205,7 @@ const runTestCase = async () => {
   // GET /api/run-test?testName=<testname>
   // Don't care about the return value
   try {
-    const response = await fetch(`/api/run-test?testName=${selectedTestCase.value}`);
+    const response = await fetch(baseURL + `/api/run-test?testName=${selectedTestCase.value}`);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -217,7 +220,7 @@ const runTestCase = async () => {
   // Return format: {"totalBytes":0,"successJobs":0,"completeJobs":0,"totalJobs":0,"completed":false}
   const intervalId = setInterval(async () => {
     try {
-      const response = await fetch('/api/task-status');
+      const response = await fetch(baseURL + '/api/task-status');
       if (response.ok) {
         const data: TestResult = await response.json();
         testResult.value = data;

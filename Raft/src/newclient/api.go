@@ -56,7 +56,7 @@ func serve() {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
-	slog.Info("Serving at 8080")
+	slog.Info("Serving at http://localhost:8080")
 	http.ListenAndServe(":8080", mux)
 }
 
@@ -71,7 +71,7 @@ func getNodes(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-	slog.Info("Get nodes", "nodes", json)
+	slog.Debug("Get nodes", "nodes", json)
 	w.Write(json)
 }
 
@@ -127,7 +127,7 @@ func runTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	executeTest(testName)
+	go executeTest(testName)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Test executed successfully"))

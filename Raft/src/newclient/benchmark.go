@@ -41,7 +41,7 @@ var TestResult struct {
 	TotalLatency  int  `json:"totalLatency"` // can get average latency by dividing this by completeJobs
 }
 
-var TestResultLock = &sync.RWMutex{}
+var TestResultLock = &sync.Mutex{}
 
 var Tests []Test = []Test{}
 
@@ -106,6 +106,8 @@ func executeTest(testName string) {
 		currWorkers++
 	}
 
+	go analyzeTestResult(results)
+
 	// add jobs to queue
 	start := time.Now()
 	for _, action := range test.Actions {
@@ -116,23 +118,10 @@ func executeTest(testName string) {
 		for i := 0; i < action.Repeat; i++ {
 			jobs <- CommandFromString(action.Action)
 		}
-		TestResult.SubmittedJobs += action.Repeat
-	}
-
-	// read results
-	for i := 0; i < TestResult.TotalJobs; i++ {
-		result := <-results
 		TestResultLock.Lock()
-		TestResult.TotalBytes += result.Bytes
-		TestResult.CompleteJobs++
-		if result.Success {
-			TestResult.SuccessJobs++
-		}
+		TestResult.SubmittedJobs += action.Repeat
 		TestResultLock.Unlock()
 	}
-	TestResultLock.Lock()
-	TestResult.Completed = true
-	TestResultLock.Unlock()
 }
 
 func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
@@ -208,6 +197,25 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 		results <- result
 	}
 	currWorkers--
+}
+
+// Intended to run as a goroutine,
+func analyzeTestResult(results <-chan TestActionResult) {
+	// read results
+	for i := 0; i < TestResult.TotalJobs; i++ {
+		result := <-results
+		TestResultLock.Lock()
+		TestResult.TotalBytes += result.Bytes
+		TestResult.CompleteJobs++
+		if result.Success {
+			TestResult.SuccessJobs++
+		}
+		TestResult.TotalLatency += int(result.Latency.Milliseconds())
+		TestResultLock.Unlock()
+	}
+	TestResultLock.Lock()
+	TestResult.Completed = true
+	TestResultLock.Unlock()
 }
 
 // GenerateRandomKey generates a random key with a given prefix and length.

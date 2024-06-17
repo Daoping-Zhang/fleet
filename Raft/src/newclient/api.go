@@ -136,9 +136,9 @@ func runTest(w http.ResponseWriter, r *http.Request) {
 // GET /api/task-status
 func getTaskStatus(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	TestResultLock.RLock()
+	TestResultLock.Lock()
 	json, err := json.Marshal(TestResult)
-	TestResultLock.RUnlock()
+	TestResultLock.Unlock()
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return

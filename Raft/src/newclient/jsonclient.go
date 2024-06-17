@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type ClientRequest struct {
@@ -29,15 +31,12 @@ func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 		return false, "host is nil"
 	}
 	nodeLock.RLock()
-	addr, err := net.ResolveTCPAddr("tcp", host.Address)
+	dialer := net.Dialer{Timeout: time.Second}
+	conn, err := dialer.Dial("tcp", host.Address)
 	nodeLock.RUnlock()
 	if err != nil {
-		slog.Error("Error resolving address", "err", err)
-		return false, err.Error()
-	}
-	conn, err := net.DialTCP("tcp", nil, addr)
-	if err != nil {
-		slog.Error("Error connecting to server", "err", err)
+		slog.Error("Error connecting to server, trying to update fleet info", "err", err, `endpoint`, host.Address)
+		go updateFleet() // maybe the node is physically down
 		return false, err.Error()
 	}
 	defer conn.Close()
@@ -45,22 +44,35 @@ func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 	// Send the request
 	reqString, err := json.Marshal(req)
 	if err != nil {
-		slog.Error("Error marshalling request", "err", err)
+		slog.Error("Error marshalling request", "err", err, `endpoint`, host.Address)
+		go updateFleet() // maybe the node is physically down
 		return false, err.Error()
 	}
 	_, err = conn.Write(reqString)
 	if err != nil {
-		slog.Error("Error sending message", "err", err)
+		slog.Error("Error sending message, trying to update fleet info", "err", err, `endpoint`, host.Address)
+		go updateFleet() // maybe the node is physically down
 		return false, err.Error()
 	}
 
 	// Receive the response
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	respReader := json.NewDecoder(conn)
 	var resp ClientResponse
-	err = respReader.Decode(&resp)
-	if err != nil {
-		slog.Error("Error receiving response", "err", err)
-		return false, err.Error()
+	ch := make(chan error, 1)
+	go func() {
+		ch <- respReader.Decode(&resp)
+	}()
+	select {
+	case <-ctx.Done():
+		slog.Error("Timeout while receiving response, closing connection", `endpoint`, host.Address)
+		return false, "timeout while receiving response"
+	case err = <-ch:
+		if err != nil {
+			slog.Error("Error receiving response, trying to update fleet info", "err", err, `endpoint`, host.Address)
+			return false, err.Error()
+		}
 	}
 
 	// automatic handle errors

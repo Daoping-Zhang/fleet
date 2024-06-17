@@ -31,6 +31,7 @@ public:
     std::unordered_map<int, uint64_t> committed_index;                 // 每个组的已提交日志索引
     std::unordered_map<int, std::unordered_map<uint64_t, int>> vote_count; // 每个组中每个日志条目的投票计数
     std::unordered_map<int, std::unordered_map<int, uint64_t>> latest_indexes_by_node;
+    std::unordered_map<int, std::unordered_map<uint64_t, int>> send_pause;
 
     void append(int groupId, const LogEntry& entry) {
         logs[groupId].push_back(entry);

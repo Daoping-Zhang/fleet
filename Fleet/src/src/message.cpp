@@ -72,6 +72,9 @@ void handle_for_sigpipe(){
 
 
 int sendMessage(int sockfd, json message) {
+
+    signal(SIGPIPE, SIG_IGN);
+
     handle_for_sigpipe(); // 设置SIGPIPE信号处理方式为忽略
     string serialized_message = message.dump();  // 序列化 JSON 对象为字符串
     int ret = send(sockfd, serialized_message.c_str(), serialized_message.size(), 0); 

@@ -1,5 +1,5 @@
 CXX := g++
-CXXFLAGS := -std=c++11 -Wall -Wextra -Werror -pthread -I./include
+CXXFLAGS := -std=c++11 -Wall -Wextra -Werror -pthread -g -I./include
 LDFLAGS := -pthread
 
 SRCS := ./src/kvstoresystem.cpp ./src/raftnode.cpp ./src/message.cpp ./src/confdeal.cpp ./src/threadpool.cpp ./src/NodeManage.cpp ./src/Debug.cpp

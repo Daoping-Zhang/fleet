@@ -313,7 +313,9 @@ void Node::LeaderLoop() {
                 if(m_active_id_table.getAllActiveIDs().size()>m_active_id_table.getAllInactiveIDs().size())
             {   
                 sendHeartBeat();  
-                sendGroupLog();               
+        
+                
+                sendGroupLog();    
 
                 
 
@@ -559,6 +561,7 @@ void Node::work(int fd)
                 if(true)
                 {
                     sendGroupLog();     
+
                 }
                 recv_heartbeat=true;//设置心跳标志
                 if(recv_info.term>current_term)current_term=recv_info.term;//如果比leader的term小，那么更新为leader的term
@@ -756,89 +759,116 @@ void Node::work(int fd)
 
 
 
+            FleetGroupReceiveData send_data;
 
-            if(latestIndex <= recv_info.latestIndex)
+            send_data.group_id = recv_info.group_id;    
+
+            std::vector<int> group = m_node_manage.getMembersByGroupId(recv_info.group_id);
+
+            if(latestIndex == recv_info.latestIndex)
             {
-                if(latestIndex < m_log.latest_indexes_by_node[recv_info.group_id][m_ids[0]])
+
+
+
+                Debug::log("收到小组长提交的日志");
+                std::vector<LogEntry> uncommittedEntries = m_log.deserializeLogEntries(recv_info.entriesSerialized);
+
+                mtx_append.lock();
+                for(LogEntry entry : uncommittedEntries)
                 {
-                    Debug::error("日志出错");
-                }else
-                {
-                    uint64_t det_index = latestIndex - m_log.latest_indexes_by_node[recv_info.group_id][m_ids[0]];
-                    if(det_index > 0)
-                    {
-                        Debug::log("leader日志落后");
-                    }
-                    FleetGroupReceiveData send_data;
-                    send_data.group_id = recv_info.group_id;    
+ 
+                    m_log.append(recv_info.group_id, entry);
+                    Debug::log("添加日志");
+                    std::cout<<recv_info.group_id<<std::endl;
+                }
 
-                    std::vector<int> group = m_node_manage.getMembersByGroupId(recv_info.group_id);
-
-                    Debug::log("收到小组长提交的日志");
-                    std::vector<LogEntry> uncommittedEntries = m_log.deserializeLogEntries(recv_info.entriesSerialized);
-
-                    mtx_append.lock();
-                    for(LogEntry entry : uncommittedEntries)
-                    {
-                        if(det_index>0)
-                        {
-                            det_index--;
-                            continue;
-                        }
-                        m_log.append(recv_info.group_id, entry);
-                        Debug::log("添加日志");
-                        std::cout<<recv_info.group_id<<std::endl;
-                    }
-
-                    uint64_t now_latestIndex = m_log.getLatestIndex(recv_info.group_id);
-                    mtx_append.unlock();
+                uint64_t now_latestIndex = m_log.getLatestIndex(recv_info.group_id);
+                mtx_append.unlock();
 
 
 
                     
 
-                    send_data.latestIndex = now_latestIndex;
+                send_data.latestIndex = now_latestIndex;
 
-                    int vote_num = 0;
+                int vote_num = 0;
 
-                    for (int id : m_ids)
+                for (int id : m_ids)
+                {
+
+                        
+                    if (std::find(group.begin(), group.end(), id) != group.end())
                     {
-
-                        
-                        if (std::find(group.begin(), group.end(), id) != group.end())
-                        {
-                            vote_num++;
-                            send_data.ids.push_back(id);
-                        }
-                        
+                        vote_num++;
+                        send_data.ids.push_back(id);
                     }
-
-
-                            
-                    send_data.vote_num = vote_num;
-                    send_data.success = true;
-
-
-                    json message;
-                    message["type"] = "fleetGroupReceiveData";
-
-                    std::string serializedSend_data = send_data.serialize();
-                    message["data"] = serializedSend_data;
-
-
-                    int send_id = m_node_manage.getLeaderIdByGroup(recv_info.group_id);
-                    
-                    sockaddr_in addr =  m_node_manage.getSockaddrById(send_id);
-
-                    sendmsg(m_addr_fd_map[addr], addr ,message);
-                    std::cout<<"send_id: "<<send_id<<std::endl;
-                    printAddressInfo(addr);                    
-
+                        
                 }
 
 
-                      
+                            
+                send_data.vote_num = vote_num;
+                send_data.success = true;
+
+
+                json message;
+                message["type"] = "fleetGroupReceiveData";
+
+                std::string serializedSend_data = send_data.serialize();
+                message["data"] = serializedSend_data;
+
+
+                int send_id = m_node_manage.getLeaderIdByGroup(recv_info.group_id);
+                    
+                sockaddr_in addr =  m_node_manage.getSockaddrById(send_id);
+
+                sendmsg(m_addr_fd_map[addr], addr ,message);
+                std::cout<<"send_id: "<<send_id<<std::endl;
+                printAddressInfo(addr);                    
+
             }
+            else
+            {
+
+                Debug::log("收到错误的日志");
+                for (int id : m_ids)
+                {
+
+                        
+                    if (std::find(group.begin(), group.end(), id) != group.end())
+                    {
+                        send_data.ids.push_back(id);
+                    }
+                        
+                }
+
+                send_data.latestIndex =latestIndex;
+                send_data.success = false;
+
+                json message;
+                message["type"] = "fleetGroupReceiveData";
+
+                std::string serializedSend_data = send_data.serialize();
+                message["data"] = serializedSend_data;
+
+
+                int send_id = m_node_manage.getLeaderIdByGroup(recv_info.group_id);
+                    
+                sockaddr_in addr =  m_node_manage.getSockaddrById(send_id);
+
+                sendmsg(m_addr_fd_map[addr], addr ,message);
+                std::cout<<"send_id: "<<send_id<<std::endl;
+                printAddressInfo(addr);   
+                    
+
+            }
+
+
+                      
+            
+            
+
+            
 
 
 
@@ -856,6 +886,7 @@ void Node::work(int fd)
         else if (message_recv["type"] == "fleetGroupReceiveData")
         {
             
+
             FleetGroupReceiveData recv_info;
 
             recv_info = recv_info.deserialize(message_recv["data"]);
@@ -867,6 +898,7 @@ void Node::work(int fd)
 
             uint64_t latestIndex = recv_info.latestIndex;
             
+            
 
             
             if(recv_info.success)
@@ -874,6 +906,7 @@ void Node::work(int fd)
                 for(int id : recv_info.ids)
                 
                 {
+                    m_log.send_pause[group_id][id] = 0;
                     mtx_append.lock();
                     m_log.addVote(group_id,latestIndex,id);
                     mtx_append.unlock();
@@ -882,7 +915,36 @@ void Node::work(int fd)
                     //std::cout<<"group_id"<<group_id<<std::endl;
                     
                 }
+                        
+                                                     
+            }
+                
+            
+            else
+            {
+               for(int id : recv_info.ids)
+                
+                {
+                    m_log.send_pause[group_id][id] = 0;
+                    mtx_append.lock();
 
+                    if(m_log.latest_indexes_by_node[group_id][id] < latestIndex)
+                    {
+                        m_log.addVote(group_id,latestIndex,id);
+                    }
+                    else
+                    {
+                        m_log.latest_indexes_by_node[group_id][id] = latestIndex;
+                    }
+                    
+                    mtx_append.unlock();
+                   // Debug::log("投票+1");
+                    
+                    //std::cout<<"group_id"<<group_id<<std::endl;
+                    
+                }
+
+            }
                  // 检查是否有一半以上的节点投票
                 if (m_log.vote_count[group_id][latestIndex] > static_cast<int> (m_node_manage.getMembersByGroupId(group_id).size() / 2)
                    ) {
@@ -902,18 +964,8 @@ void Node::work(int fd)
                     }
 
                     mtx_append.unlock();
-
-                        
-                                            
-
-                    
-
-                    
-                    
-                   
                 }
-                
-            }            
+
         }
         else if(message_recv["type"]=="appendresponse")//回应心跳|同步信息 follower->leader
         {
@@ -1395,6 +1447,13 @@ void Node::sendGroupLog()
 
                 for (int id : m_node_manage.getIdsByGroup(groupId))
                 {
+                    if(m_log.send_pause[groupId][id] != 0)
+                    {
+                        m_log.send_pause[groupId][id] --;
+                        Debug::log("等待收到日志");
+                        continue;
+                    }
+
                     if (std::find(m_ids.begin(), m_ids.end(), id) != m_ids.end() && commitIndex < latestIndex)
                     {
                         // 有需要同步的日志，先给自己投一票
@@ -1404,14 +1463,16 @@ void Node::sendGroupLog()
                     }
                     else
                     {
-                        UncommittedEntriesResult costom_entries = m_log.getUncommittedEntries(groupId, id , 4);
+                        UncommittedEntriesResult costom_entries = m_log.getUncommittedEntries(groupId, id , 100);
+
                         std::vector<LogEntry> uncommittedEntries = costom_entries.entries;
 
-                        FleetGroupSendData send_data(groupId, m_log.latest_indexes_by_node[groupId][id] + costom_entries.processedCount, m_log.latest_indexes_by_node[groupId][id], "");
+                        FleetGroupSendData send_data(groupId, m_log.latest_indexes_by_node[groupId][id] , commitIndex , "");
 
                         std::string serializedEntries = m_log.serializeLogEntries(uncommittedEntries);
                         send_data.entriesSerialized = serializedEntries;
                         std::string serializedSend_data = send_data.serialize();
+
 
                         json message;
                         message["type"] = "fleetGroupSendData";
@@ -1430,6 +1491,8 @@ void Node::sendGroupLog()
                         {
                             // 发送消息
                             sendmsg(m_addr_fd_map[addr], addr, message);
+
+                            m_log.send_pause[groupId][id] = 0;
 
                             std::cout<<"send_id: "<<id<<std::endl;
                             printAddressInfo(addr);

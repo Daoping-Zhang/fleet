@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, getCurrentInstance, unref } from 'vue'
 import { Line } from 'vue-chartjs'
 import { Chart as ChartJS, Title, Tooltip, Legend, LineElement, PointElement, LinearScale, CategoryScale } from 'chart.js'
 import { NH1, NH2, NIcon, NSelect, NButton, NInput } from 'naive-ui'
 
 const baseURL = import.meta.env.VITE_API_BASE_URL;
+const instance = getCurrentInstance();
 
 // Register chart components
 ChartJS.register(Title, Tooltip, Legend, LineElement, PointElement, LinearScale, CategoryScale)
@@ -67,22 +68,16 @@ const selectedAlgorithm = ref<string | null>(null);
 const fleetLeaderAddress = ref<string | null>(null);
 const nodeFetched = ref<boolean>(false);
 const secondElapsed = ref<number>(0);
-
-// Define the metrics
-const metrics = ref<Metrics>({
-  completionTime: 0,
-  throughput: 0,
-  otherData: ''
-});
+const completeJobs = ref<number>(0);
 
 const testResult = ref<TestResult>({
-  totalBytes: 50000,
-  successJobs: 240,
-  completeJobs: 250,
-  totalJobs: 300,
+  totalBytes: 0,
+  successJobs: 0,
+  completeJobs: 0,
+  totalJobs: 0,
   completed: false,
-  submittedJobs: 300,
-  totalLatency: 1000,
+  submittedJobs: 0,
+  totalLatency: 0,
 });
 
 const averageDelayData = ref<{ labels: string[], datasets: any[] }>({
@@ -122,22 +117,52 @@ const taskNumData = ref<{ labels: string[], datasets: any[] }>({
 });
 
 const updateCharts = () => {
-  const labels = averageDelayData.value.labels;
+  const labels = [...averageDelayData.value.labels];
   const lastLabel = labels.length > 0 ? parseInt(labels[labels.length - 1]) : 0;
   labels.push((lastLabel + 1).toString());
 
-  const lastSecondLatency = testResult.value.totalLatency - (averageDelayData.value.datasets[0].data.slice(-1)[0] || 0);
-  averageDelayData.value.datasets[0].data.push(lastSecondLatency);
+  const avgDelayData = [...averageDelayData.value.datasets[0].data];
+  const lastSecondLatency = unref(testResult).totalLatency - (avgDelayData.slice(-1)[0] || 0);
+  avgDelayData.push(lastSecondLatency / unref(testResult).completeJobs);
 
-  taskNumData.value.labels = labels;
-  taskNumData.value.datasets[0].data.push(testResult.value.submittedJobs);
-  taskNumData.value.datasets[1].data.push(testResult.value.completeJobs);
-  taskNumData.value.datasets[2].data.push(testResult.value.successJobs);
-  console.log(`Updating chart, last second latency ${lastSecondLatency}, submitted/complete/success jobs ${testResult.value.submittedJobs}/${testResult.value.completeJobs}/${testResult.value.successJobs}`)
+  const taskLabels = [...taskNumData.value.labels];
+  const submittedTasks = [...taskNumData.value.datasets[0].data];
+  const completedTasks = [...taskNumData.value.datasets[1].data];
+  const successTasks = [...taskNumData.value.datasets[2].data];
+
+  taskLabels.push((lastLabel + 1).toString());
+  submittedTasks.push(unref(testResult).submittedJobs);
+  completedTasks.push(unref(testResult).completeJobs);
+  successTasks.push(unref(testResult).successJobs);
+
+  averageDelayData.value = {
+    labels,
+    datasets: [{
+      label: 'Average Delay (ms)',
+      data: avgDelayData,
+      borderColor: 'blue',
+      fill: false,
+    }]
+  };
+
+  taskNumData.value = {
+    labels: taskLabels,
+    datasets: [
+      { label: 'Submitted Tasks', data: submittedTasks, borderColor: 'red', fill: false },
+      { label: 'Completed Tasks', data: completedTasks, borderColor: 'green', fill: false },
+      { label: 'Success Tasks', data: successTasks, borderColor: 'orange', fill: false },
+    ]
+  };
+
 };
 
+
 // Watch for updates in testResult and update charts accordingly
-watch(testResult, updateCharts);
+watch(() => testResult.value, (newValue, oldValue) => {
+  if (newValue !== oldValue) {
+    updateCharts();
+  }
+}, { deep: true, immediate: true });
 
 const fetchNodeStatus = async () => {
   if (!nodeFetched.value) {
@@ -215,6 +240,7 @@ const runTestCase = async () => {
   }
   const startTime = Date.now();
   secondElapsed.value = 0;
+  // testResult.value = { totalBytes: 0, successJobs: 0, completeJobs: 0, totalJobs: 0, completed: false, submittedJobs: 0, totalLatency: 0 };
 
   // After this, run GET /api/task-status every 1s before completed=true
   // Return format: {"totalBytes":0,"successJobs":0,"completeJobs":0,"totalJobs":0,"completed":false}
@@ -223,7 +249,17 @@ const runTestCase = async () => {
       const response = await fetch(baseURL + '/api/task-status');
       if (response.ok) {
         const data: TestResult = await response.json();
-        testResult.value = data;
+        testResult.value = { ...data };
+        // testResult.value.completeJobs = data.completeJobs;
+        // testResult.value.successJobs = data.successJobs;
+        // testResult.value.totalJobs = data.totalJobs;
+        // testResult.value.completed = data.completed;
+        // testResult.value.submittedJobs = data.submittedJobs;
+        // testResult.value.totalLatency = data.totalLatency;
+        // completeJobs.value = data.completeJobs;
+        console.log("testResult", testResult.value);
+        instance?.proxy?.$forceUpdate();
+        // updateCharts();
         secondElapsed.value = (Date.now() - startTime) / 1000;
         if (data.completed) {
           clearInterval(intervalId);
@@ -308,6 +344,7 @@ onMounted(() => {
         </div>
       </div>
     </div>
+    <p>{{ testResult }}</p>
   </main>
 </template>
 

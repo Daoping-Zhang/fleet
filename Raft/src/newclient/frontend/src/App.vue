@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { Line } from 'vue-chartjs'
+import { Chart as ChartJS, Title, Tooltip, Legend, LineElement, PointElement, LinearScale, CategoryScale } from 'chart.js'
 import { NH1, NH2, NIcon, NSelect, NButton, NInput } from 'naive-ui'
+
+// Register chart components
+ChartJS.register(Title, Tooltip, Legend, LineElement, PointElement, LinearScale, CategoryScale)
 
 interface Node {
   Address: string;
@@ -78,7 +83,59 @@ const testResult = ref<TestResult>({
   totalLatency: 1000,
 });
 
-// Function to fetch nodes status from the API
+const averageDelayData = ref<{ labels: string[], datasets: any[] }>({
+  labels: [],
+  datasets: [
+    {
+      label: 'Average Delay (ms)',
+      data: [],
+      borderColor: 'blue',
+      fill: false,
+    },
+  ],
+});
+
+const taskNumData = ref<{ labels: string[], datasets: any[] }>({
+  labels: [],
+  datasets: [
+    {
+      label: 'Submitted Tasks',
+      data: [],
+      borderColor: 'red',
+      fill: false,
+    },
+    {
+      label: 'Completed Tasks',
+      data: [],
+      borderColor: 'green',
+      fill: false,
+    },
+    {
+      label: 'Success Tasks',
+      data: [],
+      borderColor: 'orange',
+      fill: false,
+    },
+  ],
+});
+
+const updateCharts = () => {
+  const labels = averageDelayData.value.labels;
+  const lastLabel = labels.length > 0 ? parseInt(labels[labels.length - 1]) : 0;
+  labels.push((lastLabel + 1).toString());
+
+  const lastSecondLatency = testResult.value.totalLatency - (averageDelayData.value.datasets[0].data.slice(-1)[0] || 0);
+  averageDelayData.value.datasets[0].data.push(lastSecondLatency);
+
+  taskNumData.value.labels = labels;
+  taskNumData.value.datasets[0].data.push(testResult.value.submittedJobs);
+  taskNumData.value.datasets[1].data.push(testResult.value.completeJobs);
+  taskNumData.value.datasets[2].data.push(testResult.value.successJobs);
+};
+
+// Watch for updates in testResult and update charts accordingly
+watch(testResult, updateCharts);
+
 const fetchNodeStatus = async () => {
   if (!nodeFetched.value) {
     return; // No need to fetch when fleet leader is not set!
@@ -189,8 +246,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <header>
-  </header>
+  <header></header>
   <main>
     <div class="container mx-auto my-4">
       <n-h1>Fleet Consensus Algorithm</n-h1>
@@ -236,6 +292,16 @@ onMounted(() => {
             <h4 class="text-lg font-medium">Throughput</h4>
             <p>{{ testResult.completeJobs / secondElapsed }} ops/sec</p>
           </div>
+        </div>
+      </div>
+      <div class="mt-4 flex space-x-4">
+        <div class="w-1/2 p-2">
+          <h3 class="text-xl font-semibold mb-4">Average Delay</h3>
+          <Line :data="averageDelayData" />
+        </div>
+        <div class="w-1/2 p-2">
+          <h3 class="text-xl font-semibold mb-4">Task Numbers</h3>
+          <Line :data="taskNumData" />
         </div>
       </div>
     </div>

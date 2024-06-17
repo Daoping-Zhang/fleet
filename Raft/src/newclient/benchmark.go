@@ -125,6 +125,7 @@ func executeTest(testName string) {
 }
 
 func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
+	id := GenerateRandomValue(5) // worker id
 	for job := range jobs {
 		slog.Info("Worker took job", `job`, job)
 		result := TestActionResult{Action: job}
@@ -141,7 +142,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 				keys[key] = true
 				keysLock.Unlock()
 			}
-			slog.Info("SET", `key`, key, `value`, value, `ok`, ok)
+			slog.Info("SET", `key`, key, `value`, value, `ok`, ok, `worker`, id)
 			result.Bytes = len(key) + len(value) + 1
 		case DEL:
 			key := getRandExistingKey()
@@ -153,7 +154,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 				keysLock.Unlock()
 				result.Bytes = len(key)
 			}
-			slog.Info("DEL", `key`, key, `ok`, ok)
+			slog.Info("DEL", `key`, key, `ok`, ok, `worker`, id)
 		case GET:
 			key := getRandExistingKey()
 			ok, resp := SchedSendReceive(GET, key)
@@ -161,7 +162,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 				result.Success = true
 				result.Bytes = len(resp)
 			}
-			slog.Info("GET", `key`, key, `ok`, ok, `value`, resp)
+			slog.Info("GET", `key`, key, `ok`, ok, `value`, resp, `worker`, id)
 		case POWEROFF: // POWEROFF and POWERON doesn't follow traditional per-group scheduling
 			node := getFirstAliveNode() // TODO: Use random alive node?
 			if node == nil {
@@ -176,7 +177,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 				node.IsUp = false
 				nodeLock.Unlock()
 			}
-			slog.Info("Poweroff command", `node`, node)
+			slog.Info("Poweroff command", `node`, node, `worker`, id)
 		case POWERON:
 			node := getFirstDeadNode()
 			if node == nil {
@@ -191,7 +192,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 				node.IsUp = true
 				nodeLock.Unlock()
 			}
-			slog.Info("Poweron command", `node`, node)
+			slog.Info("Poweron command", `node`, node, `worker`, id)
 		}
 		result.Latency = time.Since(start)
 		results <- result

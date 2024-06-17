@@ -32,11 +32,13 @@ type TestActionResult struct {
 
 // the result of a test (all actions)
 var TestResult struct {
-	TotalBytes   int  `json:"totalBytes"`
-	SuccessJobs  int  `json:"successJobs"`
-	CompleteJobs int  `json:"completeJobs"`
-	TotalJobs    int  `json:"totalJobs"`
-	Completed    bool `json:"completed"`
+	TotalBytes    int  `json:"totalBytes"`
+	SuccessJobs   int  `json:"successJobs"`
+	CompleteJobs  int  `json:"completeJobs"`
+	TotalJobs     int  `json:"totalJobs"`
+	Completed     bool `json:"completed"`
+	SubmittedJobs int  `json:"submittedJobs"`
+	TotalLatency  int  `json:"totalLatency"` // can get average latency by dividing this by completeJobs
 }
 
 var TestResultLock = &sync.RWMutex{}
@@ -45,6 +47,9 @@ var Tests []Test = []Test{}
 
 // The keys that have been written to the fleet
 var keys = map[string]bool{}
+
+// Lock to keys
+var keysLock = sync.Mutex{}
 
 // Goroutines for processing requests
 var currWorkers = 0
@@ -84,6 +89,8 @@ func executeTest(testName string) {
 	TestResult.SuccessJobs = 0
 	TestResult.TotalBytes = 0
 	TestResult.Completed = false
+	TestResult.TotalLatency = 0
+	TestResult.SubmittedJobs = 0
 	TestResultLock.Unlock()
 
 	// Get total job count, and create channels
@@ -94,7 +101,7 @@ func executeTest(testName string) {
 	results := make(chan TestActionResult, TestResult.TotalJobs)
 
 	// create min(100, totalJobs) workers
-	for currWorkers < min(TestResult.TotalJobs, 100) {
+	for currWorkers < min(TestResult.TotalJobs, 4) {
 		go testWorker(jobs, results)
 		currWorkers++
 	}
@@ -109,6 +116,7 @@ func executeTest(testName string) {
 		for i := 0; i < action.Repeat; i++ {
 			jobs <- CommandFromString(action.Action)
 		}
+		TestResult.SubmittedJobs += action.Repeat
 	}
 
 	// read results
@@ -140,7 +148,9 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 			ok, _ := SchedSendReceive(SET, key+" "+value)
 			if ok {
 				result.Success = true
+				keysLock.Lock()
 				keys[key] = true
+				keysLock.Unlock()
 			}
 			slog.Info("SET", `key`, key, `value`, value, `ok`, ok)
 			result.Bytes = len(key) + len(value) + 1
@@ -149,7 +159,9 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 			ok, _ := SchedSendReceive(DEL, key)
 			if ok {
 				result.Success = true
+				keysLock.Lock()
 				keys[key] = false
+				keysLock.Unlock()
 				result.Bytes = len(key)
 			}
 			slog.Info("DEL", `key`, key, `ok`, ok)
@@ -173,7 +185,7 @@ func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 				result.Success = true
 				nodeLock.Lock()
 				node.IsUp = false
-				nodeLock.Unlock()	
+				nodeLock.Unlock()
 			}
 			slog.Info("Poweroff command", `node`, node)
 		case POWERON:
@@ -213,6 +225,8 @@ func GenerateRandomValue(length int) string {
 }
 
 func getRandExistingKey() string {
+	keysLock.Lock()
+	defer keysLock.Unlock()
 	for k, v := range keys {
 		if v {
 			return k

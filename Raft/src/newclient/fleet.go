@@ -151,6 +151,9 @@ func updateFleet() {
 	groupLock.Lock()
 	groups = []Group{}
 	for _, group := range fleetMsg.Groups {
+		if len(group.Nodes) == 0 {
+			continue
+		}
 		newGroup := Group{
 			ID:       group.ID,
 			LeaderID: group.Leader,

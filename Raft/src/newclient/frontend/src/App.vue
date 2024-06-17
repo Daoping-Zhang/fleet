@@ -19,6 +19,8 @@ interface TestResult {
   completeJobs: number;
   totalJobs: number;
   completed: boolean;
+  submittedJobs: number;
+  totalLatency: number;
 }
 
 
@@ -72,6 +74,8 @@ const testResult = ref<TestResult>({
   completeJobs: 250,
   totalJobs: 300,
   completed: false,
+  submittedJobs: 300,
+  totalLatency: 1000,
 });
 
 // Function to fetch nodes status from the API

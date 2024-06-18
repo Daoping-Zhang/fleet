@@ -92,6 +92,7 @@ int sendMessage(int sockfd, json message) {
         }
     }
     //std::cout << "sendMessage: Message sent successfully" << std::endl;
+    
     return 1;
 }
 
@@ -101,30 +102,36 @@ union Data {
 };
 
 int recvMessage(int fd, json& message_recv) {
-    // 设置接收缓冲区
-    std::vector<char> buffer(1024); // 大小为 1024 字节的接收缓冲区
+    std::vector<char> buffer;
+    const size_t buffer_size = 1024;  // 单次读取的最大字节数
+    char temp_buffer[buffer_size];  // 临时缓冲区
 
-    // 从文件描述符 fd 读取数据
-    int bytes_received = read(fd, buffer.data(), buffer.size());
+    while (true) {
+        int bytes_received = read(fd, temp_buffer, buffer_size);
 
-    if (bytes_received < 0) {
-        std::cerr << "Failed to read data from socket." << std::endl;
-        return -1;  // 读取失败
-    } else if (bytes_received == 0) {
-        std::cerr << "Connection closed." << std::endl;
-        return 0;  // 连接已关闭
+        if (bytes_received < 0) {
+            std::cerr << "Failed to read data from socket." << std::endl;
+            return -1;  // 读取失败
+        } else if (bytes_received == 0) {
+            if (buffer.empty()) {
+                std::cerr << "Connection closed with no data received." << std::endl;
+                return 0;  // 连接已关闭且没有数据
+            }
+            break;  // 连接关闭且已接收部分数据
+        }
+
+        // 将临时缓冲区的数据添加到主缓冲区
+        buffer.insert(buffer.end(), temp_buffer, temp_buffer + bytes_received);
     }
 
     // 将接收到的数据转换为 std::string，然后尝试解析为 JSON
     try {
-        std::string recv_data(buffer.begin(), buffer.begin() + bytes_received);
-        //std::cout<<recv_data<<std::endl;
+        std::string recv_data(buffer.begin(), buffer.end());
         message_recv = json::parse(recv_data);
     } catch (json::parse_error& e) {
-        std::cerr << "JSON recvMessage parse error: " << e.what() << std::endl;
+        std::cerr << "JSON recvMessage parse error: " << e.what() << '\n';
         return -2;  // JSON 解析错误
     }
 
-    return bytes_received;  // 返回接收到的字节数
+    return buffer.size();  // 返回接收到的总字节数
 }
-

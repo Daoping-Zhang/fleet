@@ -39,7 +39,7 @@
 
 #define MAXREQ 256
 #define MAX_EVENT 20
-#define THREAD_NUM 40
+#define THREAD_NUM 20
 
 enum NodeState {
     FOLLOWER,
@@ -93,7 +93,7 @@ public:
 
 
     void checkAndUpdateIds(); // 添加的用于检查和更新ID的方法
-    bool is_fd_active(int fd, sockaddr_in addr);
+    bool can_connect(int f, sockaddr_in addr);
 
     
 // 序列化 RequestVote 结构体到字符串
@@ -187,7 +187,7 @@ private:
     void CandidateLoop();//候选者状态循环，
     //向其他节点发送 RequestVote 消息并等待投票结果，如果获得多数选票，则成为 Leader
     void LeaderLoop();//领导者状态循环，包括向其他节点发送 AppendEntries 消息并等待响应，如果收到多数节点的确认，则提交日志条目
-    void sendmsg(int &fd,struct sockaddr_in addr,json msg);//发送信息
+    void sendmsg(int &f,struct sockaddr_in addr,json msg);//发送信息
 
     void executeEntries(int groupId, uint64_t now_commitIndex, uint64_t latestIndex, FleetKVStore& kv, FleetLog& log);
     

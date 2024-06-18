@@ -171,12 +171,12 @@ void Node::FollowerLoop() {
         delay1 = distribution1(generator1);
         //cout<<"delay1"<<delay1<<endl;
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(7*delay1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay1));
         //检验
         if(leader_id != 0)
         {
             sockaddr_in addr = m_node_manage.getSockaddrById(leader_id);
-            if(is_fd_active(m_addr_fd_map[addr],addr))
+            if(can_connect(m_addr_fd_map[addr],addr))
             {
                  recv_heartbeat = true;
             }
@@ -283,7 +283,7 @@ void Node::LeaderLoop() {
 
 
             delay3 = distribution3(generator3);
-            std::this_thread::sleep_for(std::chrono::milliseconds(4*delay3));
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay3));
             
            
             m_init = false;
@@ -301,7 +301,7 @@ void Node::LeaderLoop() {
                 for (int id : m_active_id_table.getAllInactiveIDs())
                 {                    
                     sockaddr_in addr = m_node_manage.getSockaddrById(id);
-                    if(is_fd_active(m_addr_fd_map[addr],addr))
+                    if(can_connect(m_addr_fd_map[addr],addr))
                     {
                         m_active_id_table.setActive(id,true);   
                     }
@@ -348,7 +348,7 @@ void Node::LeaderLoop() {
 
                     m_recovery_ids.clear();
                     delay3 = distribution3(generator3);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(4*delay3));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(delay3));
 
 
                 }
@@ -379,7 +379,7 @@ void Node::LeaderLoop() {
                     }
 
                     delay3 = distribution3(generator3);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(6*delay3));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(delay3));
 
                 }
                    
@@ -410,7 +410,7 @@ void Node::LeaderLoop() {
 
         //倒计时
         delay3 = distribution3(generator3);
-        std::this_thread::sleep_for(std::chrono::milliseconds(2*delay3));
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay3));
         //检验
         /*
         if(live==0)//如果五次没有follower响应，leader变成follower
@@ -1303,45 +1303,39 @@ void Node::accept_connections() {
 
 //用于节点来send信息的函数（包括创建连接,重连,这样可以通过发送信息（心跳，投票等)来快速和新加入的节点连接）
 //当连接断开后，也不会中断（sendMessage(fd,msg)防止中断）
-void Node::sendmsg(int &fd,struct sockaddr_in addr,json msg){
+
+
+void Node::sendmsg(int &f,struct sockaddr_in addr,json msg) {
     lock_guard<std::mutex> lock(send_mutex_);  // 加锁
+    int fd = socket(AF_INET, SOCK_STREAM, 0); // 每次都创建新的套接字
+    f = fd;
     int ret;
 
-    if(fd!=-1)
-    {
-        //cout<<"send"<<endl;
-        ret = sendMessage(fd,msg);
-        //cout<<"end"<<endl;
-
+    if (fd == -1) {
+        cout << "Failed to create socket." << endl;
+        return;
     }
-    if (fd==-1||ret <0) { // 未建立连接或者发送消息失败
-        // 关闭旧的套接字
-        if(ret<0)close(fd);
-        // 创建新的套接字
-        fd = socket(AF_INET, SOCK_STREAM, 0);
-        // 连接服务器
-        ret = connect(fd, (struct sockaddr*)&addr, sizeof(addr));
-        if (ret <0) { // 重新连接失败
-            // 处理连接失败的情况
-            //cout << "reconnect failed" << endl;
-            fd=-1;
-        } 
-        else { // 重新连接成功
-            // 发送消息
-            //cout<<"连接node成功"<<endl;
-            ret = sendMessage(fd,msg);
-            m_addr_fd_map[addr] = fd;
-            if (ret ==-1) { // 发送消息失败
-                // 处理发送消息失败的情况
-               cout << "close connect" << endl;
-            }
-            else
-            {
-                cout<<"no idea"<<endl;
-            }
-        }
-    } 
+
+    // 尝试连接服务器
+    ret = connect(fd, (struct sockaddr*)&addr, sizeof(addr));
+    if (ret == -1) { // 连接失败
+        cout << "Connection failed." << endl;
+        close(fd);
+        return;
+    }
+
+    // 连接成功后发送消息
+    ret = sendMessage(fd, msg);
+    if (ret == -1) { // 发送消息失败
+        cout << "Failed to send message." << endl;
+    } else {
+        //cout << "Message sent successfully." << endl;
+        m_addr_fd_map[addr] = fd; // 更新地址到文件描述符的映射
+    }
+
+    close(fd); // 发送完成后关闭套接字
 }
+
 
 
 void Node::generateGroupsMap()
@@ -1654,48 +1648,29 @@ void Node::printAddressInfo(const sockaddr_in& addr) {
     std::cout << "发送地址：IP Address: " << ip << ", Port: " << ntohs(addr.sin_port) << std::endl;
 }
 
-bool Node::is_fd_active(int fd, sockaddr_in addr)
+
+
+bool Node::can_connect(int f, sockaddr_in addr)
 {
-    if(fd<0)
+    // 创建新的套接字
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if(f > fd)
     {
-        close(fd);
-        // 创建新的套接字
-        fd = socket(AF_INET, SOCK_STREAM, 0);
-        // 连接服务器
-        int ret = connect(fd, (struct sockaddr*)&addr, sizeof(addr));
-        if(ret<0)
-        {
-            return false;
-        }else
-        {
-            m_addr_fd_map[addr] = fd;
-        }
-
-
+        f = fd;
     }
-
-    fd_set readfds;
-    FD_ZERO(&readfds);
-    FD_SET(fd, &readfds);
-
-    struct timeval tv;
-    tv.tv_sec = 0; // 设置超时时间为0，非阻塞
-    tv.tv_usec = 0;
-
-    int activity = select(fd + 1, &readfds, NULL, NULL, &tv);
-    if (activity < 0 && errno != EINTR) {
-        perror("select error");
+    if (fd < 0) {
+        perror("socket creation failed");
         return false;
     }
 
-    if (FD_ISSET(fd, &readfds)) {
-        char buffer[1];
-        int result = recv(fd, buffer, sizeof(buffer), MSG_PEEK);
-        if (result == 0 || (result < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
-            // 连接断开
-            return false;
-        }
+    // 连接服务器
+    int ret = connect(fd, (struct sockaddr*)&addr, sizeof(addr));
+    if (ret < 0) {
+        close(fd);  // 如果连接失败，确保关闭套接字
+        return false;
     }
 
-    return true;    
+    // 连接成功，关闭套接字并返回真
+    close(fd);
+    return true;
 }

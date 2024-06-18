@@ -36,7 +36,7 @@ func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 	nodeLock.RUnlock()
 	if err != nil {
 		slog.Error("Error connecting to server, trying to update fleet info", "err", err, `endpoint`, host.Address)
-		// go updateFleet() // maybe the node is physically down
+		updateFleet() // maybe the node is physically down
 		return false, err.Error()
 	}
 	defer conn.Close()
@@ -45,13 +45,13 @@ func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 	reqString, err := json.Marshal(req)
 	if err != nil {
 		slog.Error("Error marshalling request", "err", err, `endpoint`, host.Address)
-		go updateFleet() // maybe the node is physically down
+		updateFleet() // maybe the node is physically down
 		return false, err.Error()
 	}
 	_, err = conn.Write(reqString)
 	if err != nil {
 		slog.Error("Error sending message, trying to update fleet info", "err", err, `endpoint`, host.Address)
-		// go updateFleet() // maybe the node is physically down
+		updateFleet() // maybe the node is physically down
 		return false, err.Error()
 	}
 

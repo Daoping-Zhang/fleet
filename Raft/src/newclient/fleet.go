@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"sync"
+	"time"
 )
 
 type Node struct {
@@ -85,6 +86,9 @@ var nodeLock = sync.RWMutex{}
 // Lock groups and fleetLeader
 var groupLock = sync.RWMutex{}
 
+// Used to indicate whether the fleet info needs to be updated
+var updateFleetCh chan bool
+
 func getGroupLeader(id int) *Node {
 	groupLock.RLock()
 	for _, group := range groups {
@@ -101,70 +105,97 @@ func getGroupLeader(id int) *Node {
 }
 
 func updateFleet() {
-	// Cannot use SchedSendReceive here, fleet info has not been updated yet
-	req := ClientRequest{Key: "fleet_info", Method: GET.String()}
-	groupLock.RLock()
-	ok, msg := JsonSendReceive(req, fleetLeader)
-	groupLock.RUnlock()
-	if !ok {
-		slog.Error("Error getting fleet info", "msg", msg)
-		return
+	// Not running, start goroutine
+	if updateFleetCh == nil {
+		updateFleetCh = make(chan bool, 100)
+		go updateFleetWorker()
 	}
-	fleetMsg := parseUpdateFleetResponse(msg)
-	if fleetMsg == nil {
-		slog.Error("Error parsing fleet info", "msg", msg)
-		return
-	}
+	updateFleetCh <- true
+}
 
-	// Update nodes
-	nodeLock.Lock()
-	currentNodesMap := make(map[string]*Node)
-	for _, node := range nodes {
-		node.IsUp = false
-		currentNodesMap[node.Address] = node
-	}
+// Limit updateFleet frequency
+func updateFleetWorker() {
+	// Leader may be down, so we can choose another target
+	updateTarget := fleetLeader
+	skipWait := true
 
-	for _, node := range fleetMsg.Nodes {
-		if currnode, exists := currentNodesMap[node.IP]; exists {
-			// only nodes reported by backend are online
-			currnode.IsUp = true
-		} else {
-			// If node does not exist locally, add it
-			newNode := Node{Address: node.IP, IsUp: true}
-			currentNodesMap[node.IP] = &newNode
+	for range updateFleetCh {
+		// Update limited to once/3s
+		if !skipWait {
+			<-time.After(3 * time.Second)
+			skipWait = false
 		}
-	}
 
-	// Rebuild the nodes slice
-	nodes = []*Node{}
-	nodeID = make(map[int]*Node)
-	for _, nodeMsg := range fleetMsg.Nodes {
-		node := currentNodesMap[nodeMsg.IP]
-		nodes = append(nodes, node)
-		for _, id := range nodeMsg.ID {
-			nodeID[id] = node
-		}
-	}
-	nodeLock.Unlock()
-
-	// Update groups
-	groupLock.Lock()
-	groups = []Group{}
-	for _, group := range fleetMsg.Groups {
-		if len(group.Nodes) == 0 {
+		// Cannot use SchedSendReceive here, fleet info has not been updated yet
+		req := ClientRequest{Key: "fleet_info", Method: GET.String()}
+		groupLock.RLock()
+		ok, msg := JsonSendReceive(req, updateTarget)
+		groupLock.RUnlock()
+		if !ok {
+			updateTarget = getRandAliveNode()
+			skipWait = true // Changed target node, no need to wait
+			slog.Warn("Getting fleet info failed, changing target", "msg", msg, `newTarget`, updateTarget.Address)
 			continue
 		}
-		newGroup := Group{
-			ID:       group.ID,
-			LeaderID: group.Leader,
-			Nodes:    group.Nodes,
+		fleetMsg := parseUpdateFleetResponse(msg)
+		if fleetMsg == nil {
+			slog.Error("Error parsing fleet info", "msg", msg)
+			continue
 		}
-		groups = append(groups, newGroup)
+
+		// Update nodes
+		nodeLock.Lock()
+		currentNodesMap := make(map[string]*Node)
+		for _, node := range nodes {
+			node.IsUp = false
+			currentNodesMap[node.Address] = node
+		}
+
+		for _, node := range fleetMsg.Nodes {
+			if currnode, exists := currentNodesMap[node.IP]; exists {
+				// only nodes reported by backend are online
+				currnode.IsUp = true
+			} else {
+				// If node does not exist locally, add it
+				newNode := Node{Address: node.IP, IsUp: true}
+				currentNodesMap[node.IP] = &newNode
+			}
+		}
+
+		// Rebuild the nodes slice
+		nodes = []*Node{}
+		nodeID = make(map[int]*Node)
+		for _, nodeMsg := range fleetMsg.Nodes {
+			node := currentNodesMap[nodeMsg.IP]
+			nodes = append(nodes, node)
+			for _, id := range nodeMsg.ID {
+				nodeID[id] = node
+			}
+		}
+		nodeLock.Unlock()
+
+		// Update groups
+		groupLock.Lock()
+		groups = []Group{}
+		for _, group := range fleetMsg.Groups {
+			if len(group.Nodes) == 0 {
+				continue
+			}
+			newGroup := Group{
+				ID:       group.ID,
+				LeaderID: group.Leader,
+				Nodes:    group.Nodes,
+			}
+			groups = append(groups, newGroup)
+		}
+		nodeLock.RLock()
+		fleetLeader = nodeID[fleetMsg.FleetLeader]
+		nodeLock.RUnlock()
+		groupLock.Unlock()
+
 	}
-	nodeLock.RLock()
-	fleetLeader = nodeID[fleetMsg.FleetLeader]
-	nodeLock.RUnlock()
-	groupLock.Unlock()
+
+	updateFleetCh = nil
 }
 
 func parseUpdateFleetResponse(resp string) *fleetUpdateMsg {
@@ -185,6 +216,7 @@ func getFirstAliveNode() *Node {
 			return node
 		}
 	}
+	slog.Warn("No node is alive")
 	return nil
 }
 
@@ -196,5 +228,16 @@ func getFirstDeadNode() *Node {
 			return node
 		}
 	}
+	slog.Warn("No node is dead")
+	return nil
+}
+
+func getRandAliveNode() *Node {
+	for _, node := range nodeID {
+		if node.IsUp {
+			return node
+		}
+	}
+	slog.Warn("No node is alive")
 	return nil
 }

@@ -106,6 +106,7 @@ int recvMessage(int fd, json& message_recv) {
 
     // 从文件描述符 fd 读取数据
     int bytes_received = read(fd, buffer.data(), buffer.size());
+
     if (bytes_received < 0) {
         std::cerr << "Failed to read data from socket." << std::endl;
         return -1;  // 读取失败
@@ -117,9 +118,10 @@ int recvMessage(int fd, json& message_recv) {
     // 将接收到的数据转换为 std::string，然后尝试解析为 JSON
     try {
         std::string recv_data(buffer.begin(), buffer.begin() + bytes_received);
+        //std::cout<<recv_data<<std::endl;
         message_recv = json::parse(recv_data);
     } catch (json::parse_error& e) {
-        std::cerr << "JSON parse error: " << e.what() << std::endl;
+        std::cerr << "JSON recvMessage parse error: " << e.what() << std::endl;
         return -2;  // JSON 解析错误
     }
 

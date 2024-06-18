@@ -186,7 +186,7 @@ void deserializeGroupLogs(int groupId, const std::string& data) {
             vote_count[groupId][std::stoull(vote.key())] = vote.value().get<int>();
         }
     } catch (const json::exception& e) {
-        std::cerr << "JSON parse error: " << e.what() << std::endl;
+        std::cerr << "JSON parse deserializing group log error: " << e.what() << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Error deserializing group logs: " << e.what() << std::endl;
     }

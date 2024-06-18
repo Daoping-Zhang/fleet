@@ -39,7 +39,7 @@
 
 #define MAXREQ 256
 #define MAX_EVENT 20
-#define THREAD_NUM 4
+#define THREAD_NUM 40
 
 enum NodeState {
     FOLLOWER,

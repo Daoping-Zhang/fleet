@@ -83,6 +83,7 @@ int sendMessage(int sockfd, Message message) {
         }
     }
     std::cout << "sendMessage: Message sent successfully" << std::endl;
+    close(sockfd);
     return 1;
 }
 

@@ -18,8 +18,9 @@ type TestAction struct {
 }
 
 type Test struct {
-	Name    string
-	Actions []TestAction // Actions should be ascending by time
+	Name       string
+	MaxWorkers int          `json:"maxWorkers"` // Max concurrency
+	Actions    []TestAction // Actions should be ascending by time
 }
 
 // the result of a single test action
@@ -32,13 +33,13 @@ type TestActionResult struct {
 
 // the result of a test (all actions)
 var TestResult struct {
-	TotalBytes    int  `json:"totalBytes"`
-	SuccessJobs   int  `json:"successJobs"`
-	CompleteJobs  int  `json:"completeJobs"`
-	TotalJobs     int  `json:"totalJobs"`
-	Completed     bool `json:"completed"`
-	SubmittedJobs int  `json:"submittedJobs"`
-	TotalLatency  int  `json:"totalLatency"` // can get average latency by dividing this by completeJobs
+	TotalBytes       int         `json:"totalBytes"`
+	SuccessJobs      int         `json:"successJobs"`
+	CompleteJobs     int         `json:"completeJobs"`
+	TotalJobs        int         `json:"totalJobs"`
+	Completed        bool        `json:"completed"`
+	SubmittedJobs    int         `json:"submittedJobs"`
+	TotalLatency     int         `json:"totalLatency"`     // can get average latency by dividing this by completeJobs
 	TaskDistribution map[int]int `json:"taskDistribution"` // the number of tasks in each group
 }
 
@@ -103,7 +104,7 @@ func executeTest(testName string) {
 	results := make(chan TestActionResult, TestResult.TotalJobs)
 
 	// create min(100, totalJobs) workers
-	for currWorkers < min(TestResult.TotalJobs, 10) {
+	for currWorkers < min(TestResult.TotalJobs, test.MaxWorkers) {
 		go testWorker(jobs, results)
 		currWorkers++
 	}

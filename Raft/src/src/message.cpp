@@ -73,7 +73,7 @@ int sendMessage(int sockfd, Message message) {
     if (ret < 0) {
         if (errno == EPIPE || errno == ECONNRESET) {
             // 对方已经关闭了连接
-            std::cerr << "Connection closed by peer: " << strerror(errno) << std::endl;
+            //std::cerr << "Connection closed by peer: " << strerror(errno) << std::endl;
             return -1;
         } else {
             // 发生了其他错误
@@ -83,6 +83,7 @@ int sendMessage(int sockfd, Message message) {
         }
     }
     std::cout << "sendMessage: Message sent successfully" << std::endl;
+    close(sockfd);
     return 1;
 }
 

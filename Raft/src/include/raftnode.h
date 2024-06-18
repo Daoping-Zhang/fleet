@@ -28,13 +28,14 @@
 #include "log.h"
 #include <atomic>
 #define MAXREQ 256
-#define MAX_EVENT 20
-#define THREAD_NUM 4
+#define MAX_EVENT 80
+#define THREAD_NUM 40
 
 enum NodeState {
     FOLLOWER,
     CANDIDATE,
-    LEADER
+    LEADER,
+    DOWN
 };//节点的状态，包括 FOLLOWER、CANDIDATE 和 LEADER 三种状态。
 
 

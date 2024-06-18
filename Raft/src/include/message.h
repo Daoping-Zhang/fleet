@@ -21,7 +21,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <nlohmann/json.hpp>
 using namespace std;
+using json = nlohmann::json;
 
 /*在这个文件中，定义了统一的消息格式message
 包括了具体的消息
@@ -61,6 +63,7 @@ struct Message {
 
 
 struct RequestVote {
+    MessageType type;
     int term;
     int candidate_id;
     int last_log_index;
@@ -118,7 +121,43 @@ struct ClientRequest{
 };
 
 
+// 序列化 RequestVote 结构体到字符串
+std::string serializeRequestVote(const RequestVote& request) {
+    json j;
+    j["term"] = request.term;
+    j["candidate_id"] = request.candidate_id;
+    j["last_log_index"] = request.last_log_index;
+    j["last_log_term"] = request.last_log_term;
+    return j.dump();  // 将 JSON 对象转换为字符串
+}
 
+// 从字符串反序列化到 RequestVote 结构体
+RequestVote deserializeRequestVote(const std::string& data) {
+    json j = json::parse(data);  // 将字符串解析为 JSON 对象
+    RequestVote request;
+    request.term = j["term"].get<int>();
+    request.candidate_id = j["candidate_id"].get<int>();
+    request.last_log_index = j["last_log_index"].get<int>();
+    request.last_log_term = j["last_log_term"].get<int>();
+    return request;
+}
+
+// 序列化 VoteResponse 结构体到字符串
+std::string serializeVoteResponse(const VoteResponse& response) {
+    json j;
+    j["term"] = response.term;
+    j["vote_granted"] = response.vote_granted;
+    return j.dump();  // 将 JSON 对象转换为字符串
+}
+
+// 从字符串反序列化到 VoteResponse 结构体
+VoteResponse deserializeVoteResponse(const std::string& data) {
+    auto j = json::parse(data);  // 将字符串解析为 JSON 对象
+    VoteResponse response;
+    response.term = j["term"].get<int>();
+    response.vote_granted = j["vote_granted"].get<bool>();
+    return response;
+}
 
 // 将特定类型的数据转换为 Message 数据
 //RequestVoteData requestVoteData = {1, 2, 3, 4};

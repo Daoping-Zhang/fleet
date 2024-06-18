@@ -123,6 +123,7 @@ func updateFleetWorker() {
 		// Update limited to once/3s
 		if !skipWait {
 			<-time.After(3 * time.Second)
+		} else {
 			skipWait = false
 		}
 
@@ -132,8 +133,7 @@ func updateFleetWorker() {
 		ok, msg := JsonSendReceive(req, updateTarget)
 		groupLock.RUnlock()
 		if !ok {
-			updateTarget = getRandAliveNode()
-			skipWait = true // Changed target node, no need to wait
+			updateTarget := getRandAliveNode()
 			slog.Warn("Getting fleet info failed, changing target", "msg", msg, `newTarget`, updateTarget.Address)
 			continue
 		}

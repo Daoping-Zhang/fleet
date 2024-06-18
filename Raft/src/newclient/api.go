@@ -152,6 +152,6 @@ func getTaskStatus(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-	slog.Info("Task status", "status", json)
+	slog.Debug("Task status", "status", json)
 	w.Write(json)
 }

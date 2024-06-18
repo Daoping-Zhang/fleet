@@ -1,24 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, getCurrentInstance, unref } from 'vue'
-import { Line } from 'vue-chartjs'
-import { Chart as ChartJS, Title, Tooltip, Legend, LineElement, PointElement, LinearScale, CategoryScale } from 'chart.js'
+import { Line, Bar } from 'vue-chartjs'
+import { Chart as ChartJS, Title, Tooltip, Legend, LineElement, PointElement, LinearScale, CategoryScale, BarElement } from 'chart.js'
 import { NH1, NH2, NIcon, NSelect, NButton, NInput } from 'naive-ui'
 
 const baseURL = import.meta.env.VITE_API_BASE_URL;
 const instance = getCurrentInstance();
 
 // Register chart components
-ChartJS.register(Title, Tooltip, Legend, LineElement, PointElement, LinearScale, CategoryScale)
+ChartJS.register(Title, Tooltip, Legend, LineElement, PointElement, LinearScale, CategoryScale, BarElement)
 
 interface Node {
   Address: string;
   IsUp: boolean;
-}
-
-interface Metrics {
-  completionTime: number;
-  throughput: number;
-  otherData: string;
 }
 
 interface TestResult {
@@ -29,6 +23,7 @@ interface TestResult {
   completed: boolean;
   submittedJobs: number;
   totalLatency: number;
+  taskDistribution: Record<number, number>;
 }
 
 
@@ -78,6 +73,7 @@ const testResult = ref<TestResult>({
   completed: false,
   submittedJobs: 0,
   totalLatency: 0,
+  taskDistribution: {},
 });
 
 const averageDelayData = ref<{ labels: string[], datasets: any[] }>({
@@ -112,6 +108,19 @@ const taskNumData = ref<{ labels: string[], datasets: any[] }>({
       data: [],
       borderColor: 'orange',
       fill: false,
+    },
+  ],
+});
+
+const taskDistributionData = ref<{ labels: string[], datasets: any[] }>({
+  labels: [],
+  datasets: [
+    {
+      label: 'Task Distribution',
+      data: [],
+      backgroundColor: 'rgba(75, 192, 192, 0.2)',
+      borderColor: 'rgba(75, 192, 192, 1)',
+      borderWidth: 1,
     },
   ],
 });
@@ -154,6 +163,23 @@ const updateCharts = () => {
     ]
   };
 
+  // Update bar chart data
+  const taskDistribution = unref(testResult).taskDistribution;
+  const distributionLabels = Object.keys(taskDistribution).map(group => `Group ${group}`);
+  const distributionData = Object.values(taskDistribution);
+
+  taskDistributionData.value = {
+    labels: distributionLabels,
+    datasets: [
+      {
+        label: 'Task Distribution',
+        data: distributionData,
+        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+        borderColor: 'rgba(75, 192, 192, 1)',
+        borderWidth: 1,
+      },
+    ],
+  };
 };
 
 
@@ -334,17 +360,20 @@ onMounted(() => {
         </div>
       </div>
       <div class="mt-4 flex space-x-4">
-        <div class="w-1/2 p-2">
+        <div class="w-1/3 p-2">
           <h3 class="text-xl font-semibold mb-4">Average Delay</h3>
           <Line :data="averageDelayData" />
         </div>
-        <div class="w-1/2 p-2">
+        <div class="w-1/3 p-2">
           <h3 class="text-xl font-semibold mb-4">Task Numbers</h3>
           <Line :data="taskNumData" />
         </div>
+        <div class="w-1/3 p-2">
+          <h3 class="text-xl font-semibold mb-4">Task Distribution</h3>
+          <Bar :data="taskDistributionData" />
+        </div>
       </div>
     </div>
-    <p>{{ testResult }}</p>
   </main>
 </template>
 

@@ -39,6 +39,7 @@ var TestResult struct {
 	Completed     bool `json:"completed"`
 	SubmittedJobs int  `json:"submittedJobs"`
 	TotalLatency  int  `json:"totalLatency"` // can get average latency by dividing this by completeJobs
+	TaskDistribution map[int]int `json:"taskDistribution"` // the number of tasks in each group
 }
 
 var TestResultLock = &sync.Mutex{}
@@ -91,6 +92,7 @@ func executeTest(testName string) {
 	TestResult.Completed = false
 	TestResult.TotalLatency = 0
 	TestResult.SubmittedJobs = 0
+	TestResult.TaskDistribution = make(map[int]int)
 	TestResultLock.Unlock()
 
 	// Get total job count, and create channels
@@ -101,7 +103,7 @@ func executeTest(testName string) {
 	results := make(chan TestActionResult, TestResult.TotalJobs)
 
 	// create min(100, totalJobs) workers
-	for currWorkers < min(TestResult.TotalJobs, 4) {
+	for currWorkers < min(TestResult.TotalJobs, 10) {
 		go testWorker(jobs, results)
 		currWorkers++
 	}
@@ -127,7 +129,7 @@ func executeTest(testName string) {
 func testWorker(jobs <-chan Command, results chan<- TestActionResult) {
 	id := GenerateRandomValue(5) // worker id
 	for job := range jobs {
-		slog.Info("Worker took job", `job`, job)
+		slog.Info("Worker took job", `job`, job, `worker`, id)
 		result := TestActionResult{Action: job}
 		start := time.Now()
 	JOBSWITCH:
@@ -223,7 +225,7 @@ func analyzeTestResult(results <-chan TestActionResult) {
 func GenerateRandomKey(prefix string, length int) string {
 	b := make([]byte, length)
 	rand.Read(b)
-	return fmt.Sprintf("%s-%s", prefix, hex.EncodeToString(b))
+	return fmt.Sprintf("%s%s", prefix, hex.EncodeToString(b))
 }
 
 // GenerateRandomValue generates a random value with a specified length.

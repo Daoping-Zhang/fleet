@@ -40,5 +40,13 @@ func SchedSendReceive(operation Command, content string) (success bool, msg stri
 		HashKey: hash(key),
 		GroupID: groupid,
 	}
+	go UpdateTaskDistribution(groupid)
 	return JsonSendReceive(req, host)
+}
+
+// Add 1 to the corresponding group key of TestResult.TaskDistribution.
+func UpdateTaskDistribution(groupid int) {
+	TestResultLock.Lock()
+	defer TestResultLock.Unlock()
+	TestResult.TaskDistribution[groupid]++
 }

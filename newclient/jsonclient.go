@@ -37,6 +37,7 @@ func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 	if err != nil {
 		slog.Error("Error connecting to server, trying to update fleet info", "err", err, `endpoint`, host.Address)
 		updateFleet() // maybe the node is physically down
+		setNodeDown(host.Address)
 		return false, err.Error()
 	}
 	defer conn.Close()
@@ -44,19 +45,21 @@ func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 	// Send the request
 	reqString, err := json.Marshal(req)
 	if err != nil {
+		conn.Close()
 		slog.Error("Error marshalling request", "err", err, `endpoint`, host.Address)
-		updateFleet() // maybe the node is physically down
 		return false, err.Error()
 	}
 	_, err = conn.Write(reqString)
 	if err != nil {
 		slog.Error("Error sending message, trying to update fleet info", "err", err, `endpoint`, host.Address)
+		conn.Close()
 		updateFleet() // maybe the node is physically down
+		setNodeDown(host.Address)
 		return false, err.Error()
 	}
 
 	// Receive the response
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	respReader := json.NewDecoder(conn)
 	var resp ClientResponse
@@ -67,13 +70,18 @@ func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 	select {
 	case <-ctx.Done():
 		slog.Error("Timeout while receiving response, closing connection", `endpoint`, host.Address)
+		conn.Close()
 		return false, "timeout while receiving response"
 	case err = <-ch:
 		if err != nil {
 			slog.Error("Error receiving response, trying to update fleet info", "err", err, `endpoint`, host.Address)
+			updateFleet() // maybe the node is physically down
+			conn.Close()
+			setNodeDown(host.Address)
 			return false, err.Error()
 		}
 	}
+	conn.Close()
 
 	// automatic handle errors
 	if resp.Code <= 0 {
@@ -93,7 +101,7 @@ func JsonSendReceive(req ClientRequest, host *Node) (success bool, msg string) {
 				}
 			}
 			// other failure, full update
-			updateFleet()
+			// updateFleet()
 		}()
 	}
 	return resp.Code > 0, resp.Message

@@ -190,9 +190,9 @@ func updateFleetWorker() {
 		}
 		nodeLock.RLock()
 		fleetLeader = nodeID[fleetMsg.FleetLeader]
+		slog.Info("Updated fleet info", `groups`, groups, `nodes`, nodes)
 		nodeLock.RUnlock()
 		groupLock.Unlock()
-
 	}
 
 	updateFleetCh = nil
@@ -240,4 +240,17 @@ func getRandAliveNode() *Node {
 	}
 	slog.Warn("No node is alive")
 	return nil
+}
+
+// Set node down
+func setNodeDown(address string) {
+	nodeLock.Lock()
+	defer nodeLock.Unlock()
+	for _, node := range nodes {
+		if node.Address == address {
+			node.IsUp = false
+			return
+		}
+	}
+	slog.Warn("Node not found", `address`, address)
 }

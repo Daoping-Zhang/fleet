@@ -76,19 +76,36 @@ const testResult = ref<TestResult>({
   taskDistribution: {},
 });
 
-const averageDelayData = ref<{ labels: string[], datasets: any[] }>({
+const averageDelayData = ref<{ labels: string[], datasets: any[], options: any }>({
   labels: [],
   datasets: [
     {
-      label: 'Average Delay (ms)',
+      label: 'Average Delay',
       data: [],
       borderColor: 'blue',
       fill: false,
     },
   ],
+  options: {
+    scales: {
+      x: {
+        title: {
+          display: true,
+          text: 'Time (s)'
+        }
+      },
+      y: {
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: 'Delay (ms)'
+        }
+      }
+    }
+  }
 });
 
-const taskNumData = ref<{ labels: string[], datasets: any[] }>({
+const taskNumData = ref<{ labels: string[], datasets: any[], options: any }>({
   labels: [],
   datasets: [
     {
@@ -110,9 +127,26 @@ const taskNumData = ref<{ labels: string[], datasets: any[] }>({
       fill: false,
     },
   ],
+  options: {
+    scales: {
+      x: {
+        title: {
+          display: true,
+          text: 'Time (s)'
+        }
+      },
+      y: {
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: 'Number of Tasks'
+        }
+      }
+    }
+  }
 });
 
-const taskDistributionData = ref<{ labels: string[], datasets: any[] }>({
+const taskDistributionData = ref<{ labels: string[], datasets: any[], options: any }>({
   labels: [],
   datasets: [
     {
@@ -123,8 +157,24 @@ const taskDistributionData = ref<{ labels: string[], datasets: any[] }>({
       borderWidth: 1,
     },
   ],
+  options: {
+    scales: {
+      x: {
+        title: {
+          display: true,
+          text: 'Task Groups'
+        }
+      },
+      y: {
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: 'Number of Tasks'
+        }
+      }
+    }
+  }
 });
-
 const updateCharts = () => {
   const labels = [...averageDelayData.value.labels];
   const lastLabel = labels.length > 0 ? parseInt(labels[labels.length - 1]) : 0;
@@ -147,11 +197,28 @@ const updateCharts = () => {
   averageDelayData.value = {
     labels,
     datasets: [{
-      label: 'Average Delay (ms)',
+      label: 'Average Delay',
       data: avgDelayData,
       borderColor: 'blue',
       fill: false,
-    }]
+    }],
+    options: {
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'Time (s)'
+          }
+        },
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Delay (ms)'
+          }
+        }
+      }
+    }
   };
 
   taskNumData.value = {
@@ -160,10 +227,26 @@ const updateCharts = () => {
       { label: 'Submitted Tasks', data: submittedTasks, borderColor: 'red', fill: false },
       { label: 'Completed Tasks', data: completedTasks, borderColor: 'green', fill: false },
       { label: 'Success Tasks', data: successTasks, borderColor: 'orange', fill: false },
-    ]
+    ],
+    options: {
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'Time (s)'
+          }
+        },
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Number of Tasks'
+          }
+        }
+      }
+    }
   };
 
-  // Update bar chart data
   const taskDistribution = unref(testResult).taskDistribution;
   const distributionLabels = Object.keys(taskDistribution).map(group => `Group ${group}`);
   const distributionData = Object.values(taskDistribution);
@@ -179,9 +262,25 @@ const updateCharts = () => {
         borderWidth: 1,
       },
     ],
+    options: {
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'Task Groups'
+          }
+        },
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Number of Tasks'
+          }
+        }
+      }
+    }
   };
 };
-
 
 // Watch for updates in testResult and update charts accordingly
 watch(() => testResult.value, (newValue, oldValue) => {
@@ -362,15 +461,15 @@ onMounted(() => {
       <div class="mt-4 flex space-x-4">
         <div class="w-1/3 p-2">
           <h3 class="text-xl font-semibold mb-4">Average Delay</h3>
-          <Line :data="averageDelayData" />
+          <Line :data="averageDelayData" :options="averageDelayData.options" />
         </div>
         <div class="w-1/3 p-2">
           <h3 class="text-xl font-semibold mb-4">Task Numbers</h3>
-          <Line :data="taskNumData" />
+          <Line :data="taskNumData" :options="taskNumData.options" />
         </div>
         <div class="w-1/3 p-2">
           <h3 class="text-xl font-semibold mb-4">Task Distribution</h3>
-          <Bar :data="taskDistributionData" />
+          <Bar :data="taskDistributionData" :options="taskDistributionData.options" />
         </div>
       </div>
     </div>
